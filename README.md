@@ -7,11 +7,12 @@ A Windows desktop app for identifying TV episodes from video dialogue, reviewing
 - One saved process per Scout, tied to a source video folder. Pause, resume, review issues, or identify newly added files without repeating successful work.
 - Show discovery from folder names, filenames and embedded metadata. Confirm catalog hints directly, or ask AI to verify sample dialogue.
 - TVDB, TMDB and TVmaze title/ID lookup and episode-guide downloads.
-- Confirm the series without loading a model; choose any subset of episodes for AI dialogue identification.
+- Confirm the series without loading a model; choose any subset of episodes for dialogue identification.
+- Match dialogue against SubDL subtitle references first, with AI fallback for unresolved files. Reuse saved references, dialogue, fingerprints and exact-input comparisons; load a managed model only when AI is needed.
 - Choose one episode, one season, the full show or a custom multi-selection.
 - Verify two consecutive episodes in one recording, or one episode split across two recordings, with distinct combined/split previews and duplicate handling.
-- Full-dialogue matching with a second verification pass and original evidence.
-- Exact recording duplicates grouped together; competing recordings held as unresolved conflicts.
+- Subtitle evidence with canonical provider IDs and numbering, or AI dialogue matching with a second verification pass and original evidence.
+- Duplicate copies grouped together; competing recordings held for automated issue review or an explicit human assignment.
 - Local model endpoints or a managed local runtime, with optional cloud providers.
 - Settings for model downloads, usage, and API keys, with encrypted Windows credentials and explicit opt-in for cloud dialogue and downloads.
 - Cached rename/move previews, selective moves, and separate handling for duplicates and non-episode features. Saved analysis follows moved files.
@@ -54,7 +55,11 @@ Configure credentials under **Settings > Show discovery**. Credentials are encry
 
 **Identify episodes with AI** opens the scope picker for one episode, a season/folder, the full show, or a custom selection. Previous identification selections are preselected. Cancel closes the picker without starting processing. Scout downloads a missing guide for the selected show, saves its own snapshot, and matches each selected recording against it. Results, dialogue, checkpoints, usage, and exact-input model caches stay with the Scout.
 
+Missing episode descriptions are retrieved before model processing, including when resuming a saved guide. Scout checks the selected provider's episode details first, then can supplement TVDB or TMDB guides with TVmaze descriptions through verified external series IDs. Episode titles and season/episode positions must agree; omitted multipart suffixes require a complete, aligned group. Supplemental descriptions retain their source links. The selected provider still controls every series ID, episode ID, title, number and rename path. Existing descriptions are preserved, recovered descriptions are cached with the guide, and unresolved gaps produce an explicit hold when a model selects that episode.
+
 To start an independent analysis, choose **New Scout**, including when reusing the same source folder. To continue an existing analysis, use **Resume Scout**, **Review issues**, or **Reanalyze Scout**. Provider numbering can differ; each Scout retains the identity and guide used for its results. Saved guides can be imported under **Settings > Usage and tools > Advanced run data** and must match the selected provider and series.
+
+**Force stop** cancels the current identification or review immediately, including after a pause has been queued. Completed results and available evidence stay saved; the interrupted file is held until **Resume Scout** retries it. Scout confirms when cancellation and saving have finished. **Pause Scout** finishes the current file before stopping.
 
 Provider documentation and attribution: [TheTVDB v4](https://thetvdb.github.io/v4-api/), [TMDB](https://developer.themoviedb.org/docs/getting-started), [TVmaze API](https://www.tvmaze.com/api). This product uses the TMDB API but is not endorsed or certified by TMDB. TVmaze data is provided under [CC BY-SA](https://creativecommons.org/licenses/by-sa/4.0/). Provider access and distribution terms apply; no shared API keys are bundled.
 
@@ -66,13 +71,25 @@ Use one relative path template for both folders and filename. It includes the se
 
 Saving naming preferences updates the preview without running the model. Cosmetic changes remain distinct from episode corrections; files change only when their moves are explicitly selected and applied.
 
+If the selected source is already a season folder, Scout uses it as that season's destination instead of appending the season again. Template subfolders after the season component still apply. The selected folder remains the move boundary: matches belonging to another season stay held and require a Scout rooted at the show folder for moves between seasons.
+
 ## Combined and split recordings
 
-Dialogue matching can assign two consecutive catalog episodes from the same season to one file. Both require distinct supporting blocks in playback order and an independent guide verification pass. Preview names use `S01E01-E02` and both titles. This is one combined assignment, not two competing guesses.
+Dialogue matching can assign two consecutive catalog episodes from the same season to one file. The two installments may be separate stories or parts of one continuous story. Both require complete episode coverage, distinct supporting blocks in playback order, and independent guide verification. An ongoing story or cliffhanger does not by itself mean the recording is incomplete. Preview names use `S01E01-E02` and both titles. This is one combined assignment, not two competing guesses.
 
 For a split episode, both files must be selected in the same identification run. Each must have dialogue evidence identifying it as a partial recording of the same episode. After collapsing exact copies, Scout compares the two full dialogue sources twice independently. Both checks must establish complementary story continuity and agree on order. Preview names include `(Part 1 of 2)` and `(Part 2 of 2)`. Files are retained separately; Scout does not concatenate or split media; each part can be moved or renamed separately from the move preview. Identical copies of either part remain duplicates. Overlapping dialogue, competing complete recordings, a missing half, three or more distinct contenders, or inconclusive verification remain unresolved.
 
 Combined and split assignments appear separately in results, evidence and move previews. Combined files count both episodes; split files count one episode. Filename-only matching holds multi-episode ranges and part labels for dialogue review. Duration and filenames never prove multipart content. Current support is limited to two consecutive episodes per combined file and two recordings per split episode; larger or nonconsecutive combinations remain for review. Rerun identification to evaluate old results with the new matcher; old single-episode caches are not reused as multipart evidence. Fixture tests validate the workflow and safety checks; real-media model accuracy still needs benchmarking.
+
+## Subtitle matching with AI fallback
+
+In **Settings > Subtitles**, save a SubDL key and leave **Match subtitle dialogue before using AI** enabled. Subtitle searches send only series identifiers; comparisons run locally. AI fallback uses the existing Connection settings and cloud-dialogue consent. If the key is absent, the service is unavailable, or a match lacks sufficient support, Scout uses saved references where available and sends only unresolved files to the configured AI path. The managed model is downloaded/launched only when an actual AI request is needed.
+
+Subtitle assignments retain the selected metadata provider's series/episode IDs, titles and numbering. Upload episode numbers alone cannot assign a provider episode: references require a verified series identity and unique title mapping, or distinctive dialogue linking them to titled references. Ordered Part 1/Part 2 references can support one provider episode; a complete combined reference can support two consecutive provider episodes. Partial recordings, promos and ambiguous mappings fall back to AI. Duplicate and collection-conflict checks still apply; competing recordings can trigger the existing automated AI review.
+
+References and comparison results are cached in Scout's database, scoped to provider/series, guide, dialogue and matching revision. Completed reference retrieval is reused for seven days; saved references remain usable offline. Changes to the guide, dialogue or reference set invalidate exact-input comparisons. Match review labels subtitle evidence separately from AI assessments and shows reference provenance, provider mapping, text overlap and source dialogue. Overlap percentages are not confidence probabilities, and uploaded subtitle labels can still be wrong.
+
+Installing a build or changing these settings does not rewrite saved results. Resume retains successful unchanged assignments; use **Review issues** or **Reanalyze** when you explicitly want existing files evaluated again. Readable embedded text subtitles are still required by this build; audio transcription is not yet available.
 
 ## Resume an interrupted Scout
 
@@ -92,6 +109,12 @@ Fresh installations start directly with SQLite. Existing database contents remai
 
 The versioned schema uses document records for settings/history/guides/caches and a separate indexed `file_results` table for each report's file checkpoints. Credentials remain DPAPI-encrypted blobs. Reads and checkpoint replacements are transactional, with WAL and full synchronous writes. A newer unsupported schema is rejected rather than downgraded.
 
+Scout also supports a staged Doggo database backend with its own `scout_` tables. It is **opt-in only**: normal startup keeps the current Scout database. The isolated rehearsal command uses SQLite online backups and verifies saved results, encrypted credential bytes, and unrelated app tables. See [Doggo database support](docs/doggo-database.md) before testing a copy; live cutover and Tucker-to-Scout handoffs remain separate work.
+
+Right-click a Scout in the sidebar history to **Archive** or **Delete** it. **Show archived** reveals archived Scouts with **Restore from archive** in their context menu. Deletion retains saved data and supports Undo delete; archiving and deletion never change videos. Active Scouts cannot be archived or deleted.
+
+For context overflows, Scout first removes the redundant schema explanation. If the full guide still does not fit, it searches every guide entry in smaller partitions while preserving the entire dialogue in each request, then verifies the retrieved candidates together in two independent passes. Batch suggestions alone cannot become assignments. If the full dialogue or final candidate set still cannot fit, the file stays held with a context-size recommendation that includes the output allowance. No dialogue is truncated, no runtime is restarted automatically, and no local-model settings are changed. Partition retrieval can miss candidates; structural validation and agreement are not independent accuracy guarantees.
+
 ## Automated conflict review
 
 After identification and split verification, Scout re-evaluates competing episode claims using each recording's original dialogue and the full episode guide. Two independent full-guide decisions must agree before replacing a suggestion. Filenames, earlier suggestions, and an assumption that one claimant must win are not model evidence. The collection resolver runs again afterward; duplicate claims are still held rather than forced into unique slots. Original suggestions remain in the audit data. Review progress is checkpointed, and errors or paused conflict reviews cannot become accepted assignments accidentally. The match-review panel lists the competing recordings.
@@ -99,6 +122,14 @@ After identification and split verification, Scout re-evaluates competing episod
 **Reanalyze Scout** keeps the same file selection and saved guide, reuses dialogue and primary video/audio fingerprints for unchanged files, and reruns model analysis and independent verification with the current connection settings. It bypasses prior analysis caches and reevaluates combined, split, and conflicting assignments. Previous results are retained internally in SQLite; pending files are held until their fresh analysis completes. Pause and then Resume Scout continues this new analysis without repeating its successful files. Media files are never changed by analysis.
 
 **Review issues** automatically selects unresolved, failed, invalid, or changed recordings and their competing recordings or copies. It reuses unchanged dialogue and fingerprints, runs two independent full-guide checks with the current model, and reevaluates split and duplicate/conflict assignments. Unrelated successful results are preserved. Newly competing recordings are included in the final conflict check. Evidence shows why each file was included; inconclusive results stay held. Pause and Resume Scout retain the issue-review scope. No manual corrections or media changes are made.
+
+If claims still conflict, Review issues checks each disputed episode separately against its own guide and the recording's original dialogue. A combined suggestion can lose an unsupported second episode without assigning an alternative by elimination. These checks are checkpointed individually and reused on resume. Completed full-guide checks are reused during collection reconciliation. Model agreement remains a suggestion, not a guarantee; ties and failed checks stay held.
+
+New model requests classify each candidate's evidence as a complete episode, incomplete episode, preview/promo, recap, or unknown. Completeness concerns the catalog installment, not whether its wider story has ended. Combined files can contain two separate stories or a continuous two-part story; both complete installments must have distinct, ordered guide evidence. Incomplete recordings, promos and recaps cannot supply a second complete episode. Scout rejects incompatible combinations without asking the model to substitute a neighboring title. Combined proposals, including those rejected for numbering or overlapping evidence, receive two focused audits of the original descriptions with title/number fields and previous reasoning omitted. The audit retains explicit catalog part relationships without revealing episode identities; part labels alone never establish a match. After checking each candidate, the model makes one joint recording-level decision: one complete episode, continuous parts, separate complete episodes, an incomplete episode, or unresolved. Individual candidate audits cannot each claim the whole recording. The shared decision must agree with the original guide evidence and playback order, and both independent audits must agree. Guide sentence parsing preserves abbreviations and every original clause. Every guide sentence must be checked, supporting quotes must align to consecutive original words, and a reduced single-episode assignment must account for the recording as a whole. Citation alignment allows subtitle punctuation and an immediate block continuation, preserves the raw model response, and displays the original source span. Unidentified additional installments, disagreement about episode coverage or the relationship between parts, and invalid quotes remain held. For explicit consecutive catalog parts, a shared handoff block is permitted only with two distinct grounded evidence blocks on each side; interleaved coverage remains held. An unresolved related part cannot be silently dropped in favor of the ending. Original proposals and audits are retained. Structural response errors in the initial search can still receive one bounded retry; grounded audits do not repair their output. These safeguards verify provenance and consistency, not the independent truth of the model's interpretation. Missing guide events can cause conservative holds.
+
+Missing sources retain their evidence and history but stop reserving episode assignments after Scout verifies that the source folder is available and cannot reconnect the recording. An unavailable drive does not count as a missing recording. Different encodings can share one assignment only when their complete normalized dialogue is identical, sufficiently substantial, and their durations agree; similar summaries or shared scenes do not establish copies.
+
+In **Results > Match review**, **Force assignment** lets you choose one complete episode from the saved guide and optionally record a reason. The dialog lists affected competing recordings before you confirm. This explicit human decision takes precedence; competing recordings remain held and the model's suggestions are retained separately. Results are labeled **Human override**. **Undo override** restores the previous decision or automatic conflict handling without undoing file moves. Overrides persist through resume and reanalysis while the recording, dialogue and series identity remain unchanged. A changed source, occupied destination, or interrupted move still requires the normal safety checks. Generate a new move preview after changing an assignment; forcing an assignment does not move any files.
 
 Right-click Scout’s Windows taskbar icon for **Ready for review** and **Recent Scouts**. Selecting an entry opens that Scout’s results in the existing window, or launches Scout when closed. During processing, the requested Scout opens after the current activity finishes or pauses. Windows taskbar history settings control whether custom Jump List categories are displayed.
 
@@ -118,6 +149,7 @@ Tokens include series, code, title, titles, season/episode (optionally :00), pro
 - remove("text") removes literal text only, even when it spells a selector name.
 - replaceWhitespace("."), replacePunctuation(" "), replace("&", "and"), lowercase(), uppercase(), trim(), prefix("text"), and suffix("text") provide explicit formatting.
 - join(" and ") joins combined titles. Episode codes retain their range.
+- Combined entries with the same title and part numbers 1/2 use their shared story title: `Encounter at Farpoint (1)` + `(2)` becomes `S01E01-E02 - Encounter at Farpoint`. Different titles, such as `Space Chicken` and `Steak Night`, retain both names. Provider titles and episode IDs remain unchanged.
 - partSuffix is empty for complete files or contains (Part 1 of 2), including a leading space. A split suffix is added automatically when no part token is present.
 
 Functions use dot chaining. Arguments are readable double-quoted strings; quotes and backslashes inside them are escaped. Older pipe templates display as equivalent dot chains when opened in Settings; unknown functions/selectors are rejected. Braces escape as {{ and }}. Templates must stay relative, cannot traverse parent folders, and must include a season folder token, episode code and title. Windows-invalid filename characters are sanitized. Existing naming preferences are converted when opened in Settings. **Preserve correct names** remains the default; choose **Standardize all names** to apply purely cosmetic changes.
@@ -129,6 +161,8 @@ Functions use dot chaining. Arguments are readable double-quoted strings; quotes
 **Identify new files** scans the selected Scout's source folder for added videos, identifies only those additions, and checks their assignments against saved results. New conflicts include their competing recordings in automated review; unrelated saved results (including older failures) stay unchanged. The incremental scope is checkpointed, so **Pause Scout** and **Resume Scout** continue that batch without repeating successes. This is an explicit scan, not a background folder watcher. Use Review issues or Resume Scout to retry older failures.
 
 Move previews are cached in SQLite and restored across launches. Matching results, guide, naming preferences, series identity, source location, source file metadata and destination occupancy determine validity. **Regenerate preview** explicitly recalculates. Older previews without a cache signature need one regeneration. **Open full preview** launches Edge, Chrome or Firefox directly, preferring the recognized default HTTPS browser rather than the HTML file association.
+
+The missing-episode list follows the saved identification scope. A season selection checks only that season; a full-show selection checks the show (or just the source season when rooted there). Individual files, custom selections and arbitrary folders do not imply that other catalog episodes are missing. Older Scouts without a saved scope only receive a season coverage check when their source folder identifies the season. Matching still considers the full provider guide so misplaced files can be identified correctly.
 
 The Windows template editor uses [AvalonEdit](https://github.com/icsharpcode/AvalonEdit), distributed under the MIT license. Its notice is included in THIRD-PARTY-NOTICES.txt.
 
@@ -153,7 +187,7 @@ On Windows, install the SDK selected by `global.json`, then run:
 ./artifacts/win-x64/Scout.exe
 ```
 
-Pass `-DotnetPath C:\path\to\dotnet.exe` to use a particular SDK installation. The build runs the executable test suite and publishes a self-contained x64 app. End users do not need an installed .NET runtime.
+Pass `-DotnetPath C:\path\to\dotnet.exe` to use a particular SDK installation. The build runs the core and desktop startup checks and publishes a self-contained x64 app. End users do not need an installed .NET runtime.
 
 ### Package
 
@@ -168,6 +202,7 @@ Packaging produces a ZIP and SHA-256 file in `artifacts/releases`. Use `-SkipBui
 - `Scout.Core`: media pipeline, matcher, model transport, collection resolution, preview planner, settings and workspace persistence.
 - `Scout.Desktop`: WPF application and Windows integration.
 - `Scout.Tests`: executable regression suite with synthetic fixtures and mocked HTTP.
+- `Scout.Desktop.Tests`: Windows startup and history-menu checks using temporary data, without opening the user's database or loading models.
 - `Scout.Core/Assets`: matcher prompts and JSON schemas.
 - `Scout.Desktop/Assets`: mascot source PNG, application PNG and multi-resolution ICO.
 - `scripts/Generate-Icon.ps1`: exports the dog mascot source artwork to PNG and multi-size Windows ICO without external graphics tools.
@@ -176,6 +211,7 @@ Run tests with:
 
 ```powershell
 dotnet run --project Scout.Tests -c Release
+dotnet run --project Scout.Desktop.Tests -c Release
 # Optional live, key-free provider smoke test:
 dotnet run --project Scout.Tests -c Release -- --metadata-smoke
 ```
@@ -194,6 +230,12 @@ Guide cards sent to the matcher include catalog season and episode numbers. Inva
 
 ### Isolated model benchmarks
 
+Episode identification starts with deterministic retrieval across the whole transcript and each temporal third. Selected original passages and a catalog shortlist produce compact candidate IDs. Inconclusive retrieval expands automatically to the full dialogue and catalog; context recovery partitions the catalog without truncating dialogue. Retrieval never creates an accepted assignment on its own. Production verification audits complete original dialogue against every proposed guide statement. Combined episodes and conflict review retain two agreeing full-dialogue audits. Excerpt-only verification remains an opt-in benchmark experiment: it requested full dialogue in every measured difficult case, adding a redundant call. The evidence panel reports the actual audit scope, including for older saved results. Compact responses cite stable original span IDs; Scout reconstructs verbatim excerpts and review labels without changing model verdicts. Coverage, chronology, promo/recap, source-grounding and duplicate/conflict checks remain enforced. Missing candidates and unsupported descriptions may still cause holds, and this workflow needs evaluation beyond the saved development cases.
+
+The [compact evidence benchmark](tools/Scout.RetrievalBenchmark/README.md) evaluates the production workflow on unchanged saved dialogue with CPU-only inference and thinking disabled. It writes only isolated benchmark artifacts.
+
 The `tools/` projects contain the automated model comparisons and diagnostic runners. See the [model comparison](tools/Scout.Benchmark/README.md), [decision-model evaluation](tools/Scout.JudgeBenchmark/README.md), [fast workflow](tools/Scout.FastBenchmark/README.md), and [compact verification benchmark](tools/Scout.VerificationBenchmark/README.md) instructions. Personal fixtures, transcripts, generated reports, databases, model weights, and Python caches are excluded from Git. Some diagnostic scripts use local experiment paths; review their inputs before running them.
+
+Prompt processing and answer generation have separate CPU thread settings. Prompt threads set to `0` retain the generation thread count; explicit values apply at the next managed model launch. Tune with measurements rather than assuming more threads are faster. The search and audit requests share a stable system/dialogue prefix, followed by stage-specific catalog and instructions, so llama.cpp can reuse matching dialogue computation. Each call still supplies its own inputs and no previous model answers.
 
 Scout is licensed under the [MIT License](LICENSE).
