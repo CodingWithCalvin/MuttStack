@@ -29,3 +29,5 @@ Each invocation is a separate process. First Tucker sends two completed outputs 
 This tool does not switch Scout storage or publish either application. To test UI controls without launching an installed app, run `Scout.Desktop.Tests`; it uses temporary settings, workspaces and synthetic data. Set the process-local `SCOUT_TEST_RENDERS` variable to an isolated directory to save the inbox render.
 
 The protocol and live-rollout boundary are documented in the sibling Tucker repository's `docs/scout-handoffs.md`.
+
+The `selection-handoff` and `selection-status` modes also verify a completed `.build/cutover-rehearsal-*` switch through Scout's persistent selector. They require that selector to point to the isolated directory's `Doggo/doggo.db`. See the [cutover tool](../Scout.DatabaseCutover/README.md) for the sequence.

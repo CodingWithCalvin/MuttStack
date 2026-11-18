@@ -8,6 +8,7 @@ public partial class App : Application
 {
     // The desktop regression harness supplies its own temporary storage.
     internal bool IsolatedStartup { get; init; }
+    Doggo.StorageLease? selectionLease, databaseLease;
     protected override void OnStartup(StartupEventArgs e) {
         base.OnStartup(e);
         if(IsolatedStartup)return;
@@ -20,13 +21,20 @@ public partial class App : Application
             if(!ClaimInstance(e.Args))return;
             using var current=Process.GetCurrentProcess();
             if(Process.GetProcessesByName(current.ProcessName).Any(p=>p.Id!=current.Id&&p.SessionId==current.SessionId&&p.StartTime<current.StartTime))throw new InvalidOperationException("Close the other Scout window before opening this build. Scout uses one shared database.");
-            var dataRoot=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Scout");
-            // Opt-in only: adding Doggo support must not switch an installed Scout.
-            var doggo=Environment.GetEnvironmentVariable("SCOUT_DOGGO_DATABASE");
-            if(doggo!=null&&(!Path.IsPathFullyQualified(doggo)||!File.Exists(doggo)))throw new ArgumentException("SCOUT_DOGGO_DATABASE must name an existing migrated database using an absolute path.");
-            var db=doggo==null?new ScoutDatabase(Path.Combine(dataRoot,"scout.db")):ScoutDatabase.OpenExistingDoggo(doggo);
-            var settings=Environment.GetEnvironmentVariable("SCOUT_SETTINGS")??Path.Combine(SettingsStore.DefaultDirectory,"UI-Trial");
-            var workspaces=Environment.GetEnvironmentVariable("SCOUT_WORKSPACES")??Environment.GetEnvironmentVariable("EPISCOUT_WORKSPACES")??Path.Combine(SettingsStore.DefaultDirectory,"UI-Trial","Workspaces");
+            var explicitRoot=Environment.GetEnvironmentVariable("SCOUT_DATA_ROOT");
+            if(explicitRoot!=null&&!Path.IsPathFullyQualified(explicitRoot))throw new ArgumentException("SCOUT_DATA_ROOT must be an absolute path.");
+            var dataRoot=explicitRoot??Doggo.ScoutStorageSelection.DefaultRoot;
+            selectionLease=Doggo.StorageLease.Acquire(false,Doggo.ScoutStorageSelection.ConfigPath(dataRoot));
+            var choice=Doggo.ScoutStorageSelection.Resolve(dataRoot,
+                explicitRoot==null?Path.Combine(SettingsStore.DefaultDirectory,"UI-Trial"):null,
+                Environment.GetEnvironmentVariable("SCOUT_DOGGO_DATABASE"),
+                Environment.GetEnvironmentVariable("SCOUT_SETTINGS"),
+                Environment.GetEnvironmentVariable("SCOUT_WORKSPACES")??Environment.GetEnvironmentVariable("EPISCOUT_WORKSPACES"));
+            databaseLease=Doggo.StorageLease.Acquire(false,choice.DatabasePath);
+            var db=choice.UsesDoggo?ScoutDatabase.OpenExistingDoggo(choice.DatabasePath):new ScoutDatabase(choice.DatabasePath);
+            var settings=choice.SettingsRoot;var workspaces=choice.WorkspacesRoot;
+            Environment.SetEnvironmentVariable("SCOUT_SETTINGS",settings);
+            Environment.SetEnvironmentVariable("SCOUT_WORKSPACES",workspaces);
             ScoutStorage.Register(settings,db);ScoutStorage.Register(workspaces,db);
             var window=new MainWindow();MainWindow=window;
             if(e.Args.Length==2&&e.Args[0]=="--report")window.LoadReport(e.Args[1]);

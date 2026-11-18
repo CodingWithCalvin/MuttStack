@@ -43,6 +43,6 @@ public partial class App {
  protected override void OnExit(ExitEventArgs e) {
   activationStop.Cancel();
   if(ownsInstance)instanceMutex?.ReleaseMutex();
-  instanceMutex?.Dispose();base.OnExit(e);
+  databaseLease?.Dispose();selectionLease?.Dispose();instanceMutex?.Dispose();base.OnExit(e);
  }
 }

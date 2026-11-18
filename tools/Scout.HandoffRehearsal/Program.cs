@@ -9,7 +9,8 @@ using Tucker;
 // Synthetic media only. Every phase runs in a separate process against a marked copy.
 if (args.Length < 2) throw new ArgumentException("Usage: <prepare|send|accept|append|verify> <isolated-root> [offline-doggo.migrated.db]");
 var mode = args[0]; var root = Path.GetFullPath(args[1]);
-if (!Path.IsPathFullyQualified(args[1]) || !root.Contains("\\.build\\handoff-rehearsal-", StringComparison.OrdinalIgnoreCase))
+if (!Path.IsPathFullyQualified(args[1]) || !(root.Contains("\\.build\\handoff-rehearsal-", StringComparison.OrdinalIgnoreCase) ||
+    mode is "selection-handoff" or "selection-status" && root.Contains("\\.build\\cutover-rehearsal-", StringComparison.OrdinalIgnoreCase)))
     throw new ArgumentException("Use a new .build/handoff-rehearsal-* directory, never an installed app directory.");
 for (var ancestor = new DirectoryInfo(root); ancestor != null; ancestor = ancestor.Parent)
     if (ancestor.Exists && ancestor.Attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException("Rehearsal paths cannot traverse junctions.");
@@ -18,6 +19,35 @@ var marker = Path.Combine(root, "isolated-handoff-rehearsal.json");
 const string RunId = "synthetic-tucker-scout-rehearsal";
 void Check(bool ok, string message) { if (!ok) throw new Exception(message); Console.WriteLine("PASS " + message); }
 void WriteJson(string name, object value) => File.WriteAllText(Path.Combine(root, name), JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }));
+if (mode is "selection-handoff" or "selection-status")
+{
+    var choice = ScoutStorageSelection.Resolve(Path.Combine(root, "Scout"));
+    Check(choice.UsesDoggo && Path.GetFullPath(choice.DatabasePath).Equals(Path.Combine(root, "Doggo", "doggo.db"), StringComparison.OrdinalIgnoreCase), "Persistent selector resolves only the isolated shared database without environment overrides");
+    const string selectedRun = "persistent-selection-rehearsal";
+    var sender = new ScoutOutbox(choice.DatabasePath);
+    if (mode == "selection-status")
+    {
+        Check(sender.Deliveries(selectedRun).Single().Status == "Accepted", "Separate sender process restores Scout acceptance through the selected database");
+        return;
+    }
+    Check(sender.Deliveries(selectedRun).Count == 0, "No duplicate selected-storage fixture has been sent");
+    var output = Path.Combine(root, "synthetic-output"); Directory.CreateDirectory(output);
+    var job = new Job { QueueId = selectedRun, QueueName = "Isolated Example", Source = Path.Combine(root, "synthetic-raw.mkv"),
+        Name = "published.mkv", Status = "Completed", Encoding = new("unused", "fixture", "", false, output, "mkv"), Series = new("tvdb", "42", "Isolated Example", "2020", "Synthetic") };
+    File.WriteAllText(job.Source, "synthetic raw"); File.WriteAllText(job.OutputPath, "synthetic compressed output");
+    var id = sender.SendCompleted(selectedRun, [job])!;
+    var database = ScoutDatabase.OpenExistingDoggo(choice.DatabasePath); ScoutStorage.Register(choice.WorkspacesRoot, database);
+    try
+    {
+        var inbox = new ScoutInbox(database, choice.WorkspacesRoot); var receipt = inbox.Accept(id);
+        var run = new WorkspaceStore(choice.WorkspacesRoot).ReadAll(includeArchived: true).Single(r => r.Id == receipt.RunIds.Single());
+        Check(run.Status == "Draft" && run.SelectedFiles.SequenceEqual(new[] { job.OutputPath }), "Scout accepts into exact-file waiting history through the persistent selection");
+        Check(inbox.Accept(id).RunIds.SequenceEqual(receipt.RunIds), "Selected-storage acceptance remains idempotent");
+    }
+    finally { ScoutStorage.Unregister(choice.WorkspacesRoot); }
+    WriteJson("selected-handoff-report.json", new { Passed = true, EnvironmentOverrideRequired = false, LiveAppsUpdated = false, Database = choice.DatabasePath });
+    return;
+}
 SqliteConnection Open(string path, bool readOnly = false)
 {
     var db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Mode = readOnly ? SqliteOpenMode.ReadOnly : SqliteOpenMode.ReadWriteCreate, Pooling = false }.ToString()); db.Open(); return db;

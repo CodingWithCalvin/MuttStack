@@ -218,7 +218,7 @@ dotnet run --project Scout.Tests -c Release -- --metadata-smoke
 
 ### Tucker inbox (isolated support)
 
-With prepared Doggo storage, **Inbox** shows compressed outputs sent by Tucker and a badge for waiting batches. Accepting saves draft Scouts grouped by series, with exact file selections; it does not start processing. Acceptance persists while Tucker is closed. Normal startup still uses the standalone Scout database. Live migration and installation are deferred. See [Doggo storage](docs/doggo-database.md) and [the isolated handoff rehearsal](tools/Scout.HandoffRehearsal/README.md). Building this support requires the matching sibling `Tucker` checkout containing `src/Doggo.Handoffs`.
+With prepared Doggo storage, **Inbox** shows compressed outputs sent by Tucker and a badge for waiting batches. Accepting saves draft Scouts grouped by series, with exact file selections; it does not start processing. Acceptance persists while Tucker is closed. Normal startup uses the standalone Scout database until the [cutover tool](tools/Scout.DatabaseCutover/README.md) saves a persistent Doggo selection. Future launches and taskbar entries honor that choice. The tool has been tested on isolated copies; live migration and installation remain deferred. See [Doggo storage](docs/doggo-database.md) and [the isolated handoff rehearsal](tools/Scout.HandoffRehearsal/README.md). Building this support requires the matching sibling `Tucker` checkout containing `src/Doggo.Handoffs`.
 
 ### Local data
 
