@@ -28,7 +28,7 @@ public interface IMetadataCatalog
 }
 
 // Fixed provider hosts: API credentials never go to model endpoints or arbitrary URLs.
-public sealed class MetadataCatalog(HttpClient http,string provider,string? credential=null,string? pin=null):IMetadataCatalog
+public sealed partial class MetadataCatalog(HttpClient http,string provider,string? credential=null,string? pin=null):IMetadataCatalog,IEpisodeDescriptions
 {
     public string Provider=>provider;
     private string? token;

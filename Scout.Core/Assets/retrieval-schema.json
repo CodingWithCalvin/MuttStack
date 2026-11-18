@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "integer",
+        "enum": [
+          0
+        ]
+      }
+    },
+    "search_more": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "candidates",
+    "search_more"
+  ]
+}

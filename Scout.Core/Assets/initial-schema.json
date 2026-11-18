@@ -37,13 +37,24 @@
           "event_comparison": {
             "type": "string",
             "maxLength": 450
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "complete_episode",
+              "incomplete_episode",
+              "preview_or_promo",
+              "recap",
+              "unknown"
+            ]
           }
         },
         "required": [
           "episode_title",
           "supporting_blocks",
           "contradicting_blocks",
-          "event_comparison"
+          "event_comparison",
+          "content_type"
         ]
       }
     },

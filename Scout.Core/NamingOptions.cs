@@ -41,10 +41,11 @@ public sealed class NamingOptions
             throw new ArgumentException("Naming templates must be a single Windows filename or folder, without path separators or invalid characters.");
     }
     public string FileName(string series, Episode episode,SeriesIdentity? identity=null) => PathTemplate!=null?NamingDsl.Render(PathTemplate,series,[episode],identity:identity).File:Words(Expand(FileTemplate, series, episode,identity),FileWordSeparator);
-    public string AssignmentName(string series,IReadOnlyList<Episode> episodes,int part=0,int parts=0,SeriesIdentity? identity=null) {
+    public string AssignmentName(string series,IReadOnlyList<Episode> episodes,int part=0,int parts=0,SeriesIdentity? identity=null)=>AssignmentName(series,episodes,part,parts,identity,true);
+    private string AssignmentName(string series,IReadOnlyList<Episode> episodes,int part,int parts,SeriesIdentity? identity,bool collapsePartTitles) {
         if(episodes.Count is <1 or >2||episodes.Count==2&&(episodes[0].Season!=episodes[1].Season||episodes[1].Number!=episodes[0].Number+1)||parts!=0&&(parts!=2||part is <1 or >2||episodes.Count!=1))throw new ArgumentException("Invalid multipart naming assignment.");
-        if(PathTemplate!=null)return NamingDsl.Render(PathTemplate,series,episodes,part,parts,identity).File;
-        var first=episodes[0] with {Title=string.Join(CombinedTitleSeparator,episodes.Select(e=>e.Title))};
+        if(PathTemplate!=null)return NamingDsl.Render(PathTemplate,series,episodes,part,parts,identity,collapsePartTitles).File;
+        var first=episodes[0] with {Title=string.Join(CombinedTitleSeparator,collapsePartTitles?NamingTitles.For(episodes):episodes.Select(e=>e.Title))};
         var stem=Expand(FileTemplate,series,first,identity,episodes.Count==2?$"-E{episodes[1].Number:00}":"");
         return Words(parts>0?stem+$" (Part {part} of {parts})":stem,FileWordSeparator);
     }
@@ -52,12 +53,13 @@ public sealed class NamingOptions
     public bool EquivalentAssignmentName(string source,string series,IReadOnlyList<Episode> episodes,int part=0,int parts=0,SeriesIdentity? identity=null) {
         if(EquivalentName(source,AssignmentName(series,episodes,part,parts,identity)))return true;
         if(episodes.Count!=2)return false;
+        if(EquivalentName(source,AssignmentName(series,episodes,part,parts,identity,false)))return true;
         if(PathTemplate!=null) {
             // Correct original combined names remain correct regardless of the output template.
             var conventional=new NamingOptions{CombinedTitleSeparator=" and "};
-            if(EquivalentName(source,conventional.AssignmentName(series,episodes,part,parts,identity)))return true;
+            if(EquivalentName(source,conventional.AssignmentName(series,episodes,part,parts,identity))||EquivalentName(source,conventional.AssignmentName(series,episodes,part,parts,identity,false)))return true;
             conventional.CombinedTitleSeparator=" ";
-            return EquivalentName(source,conventional.AssignmentName(series,episodes,part,parts,identity));
+            return EquivalentName(source,conventional.AssignmentName(series,episodes,part,parts,identity))||EquivalentName(source,conventional.AssignmentName(series,episodes,part,parts,identity,false));
         }
         // Only the separator BETWEEN the two verified titles is optional. Never remove
         // "and" from within a title or accept different episode numbers/order.

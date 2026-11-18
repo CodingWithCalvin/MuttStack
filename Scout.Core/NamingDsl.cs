@@ -80,6 +80,12 @@ public static class NamingDsl {
   if(!tokens.Take(tokens.Count-1).Any(t=>t.Contains("season")||t.Contains("season:00")))throw new ArgumentException("Folder components must include a season token.");
   var file=tokens[^1];if(!file.Any(t=>t is "title" or "titles")||!(file.Contains("code")||file.Any(t=>t is "season" or "season:00")&&file.Any(t=>t is "episode" or "episode:00")))throw new ArgumentException("Filename needs {title} or {titles}, plus {code} or season and episode tokens.");
  }
+ internal static int SeasonFolderIndex(string template) {
+  var indices=Components(template).SkipLast(1).Select((part,index)=>(part,index))
+   .Where(p=>Regex.Matches(p.part,Pattern).Any(m=>m.Groups[1].Success&&Parse(m.Groups[1].Value).Token is "season" or "season:00"))
+   .Select(p=>p.index).ToArray();
+  return indices.Length==1?indices[0]:-1;
+ }
  private static string Remove(string value,RemovalTarget target)=>target switch {
   RemovalTarget.Quotes=>new string(value.Where(c=>!QuoteCharacters.Contains(c)).ToArray()),
   RemovalTarget.Punctuation=>Regex.Replace(value,@"\p{P}",""),
@@ -98,14 +104,15 @@ public static class NamingDsl {
   "prefix"=>value.Length==0?"":a[0]+value,"suffix"=>value.Length==0?"":value+a[0],
   _=>throw new ArgumentException("Unknown naming function.")
  };
- public static (string Folder,string File) Render(string template,string series,IReadOnlyList<Episode> episodes,int part=0,int parts=0,SeriesIdentity? identity=null) {
+ public static (string Folder,string File) Render(string template,string series,IReadOnlyList<Episode> episodes,int part=0,int parts=0,SeriesIdentity? identity=null,bool collapsePartTitles=true) {
   Validate(template);var first=episodes[0];var components=Components(template);
   var code=first.Code+(episodes.Count==2?$"-E{episodes[1].Number:00}":"");
+  var titles=collapsePartTitles?NamingTitles.For(episodes):episodes.Select(e=>e.Title).ToList();
   string Token(Match m) {
    if(m.Value=="{{")return "{";if(m.Value=="}}")return "}";var expression=Parse(m.Groups[1].Value);var token=expression.Token;
    if(token is "provider" or "id"){if(identity==null)throw new ArgumentException("Select a metadata identity for provider and ID tokens.");identity.Validate();}
-   var values=token=="titles"?episodes.Select(e=>e.Title).ToList():new List<string>{token switch {
-    "series"=>series,"title"=>string.Join(" and ",episodes.Select(e=>e.Title)),"code"=>code,
+   var values=token=="titles"?titles.ToList():new List<string>{token switch {
+    "series"=>series,"title"=>string.Join(" and ",titles),"code"=>code,
     "season"=>first.Season.ToString(),"season:00"=>first.Season.ToString("00"),"episode"=>first.Number.ToString()+(episodes.Count==2?$"-E{episodes[1].Number:00}":""),"episode:00"=>first.Number.ToString("00")+(episodes.Count==2?$"-E{episodes[1].Number:00}":""),
     "provider"=>identity!.Provider,"id"=>identity!.Id,"part"=>parts>0?part.ToString():"","parts"=>parts>0?parts.ToString():"","partSuffix"=>parts>0?$" (Part {part} of {parts})":"",_=>""
    }};

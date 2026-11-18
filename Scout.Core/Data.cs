@@ -25,8 +25,11 @@ public static class Data
 public sealed record Episode(int Id,int Season,int Number,string Title,string Overview="")
 {
     public List<GuideReference>? References {get;init;}
+    public EpisodeDescriptionSource? DescriptionSource {get;init;}
+    public string? DescriptionIssue {get;init;}
     [JsonIgnore] public string Code=>$"S{Season:00}E{Number:00}";
 }
+public sealed record EpisodeDescriptionSource(string Provider,string SeriesId,string EpisodeId,string Url,string Method,DateTimeOffset RetrievedAt);
 public sealed record GuideReference(string Overview);
 public sealed record Cue(double Start,string Text);
 public sealed record Block(int Index,int CueIndex,int EndCueIndex,double Start,string SourceText);
@@ -44,11 +47,14 @@ public sealed class RecordingGroup
     public string Status {get;set;}="unassigned";
     public List<Episode> Claims {get;init;}=[];
     public List<string> CompetingRecordings {get;set;}=[];
+    public JsonObject? HumanDecision {get;set;}
+    public bool DialogueCopies {get;set;}
     public bool Feature => Status=="unassigned" && Rows.All(r=>r["reasoning"].Text("assessment")=="non_episode");
     public bool Duplicate => Rows.Count>1;
     public string Code=>Combined?$"{Episodes[0].Code}-E{Episodes[1].Number:00}":Episode?.Code ?? "—";
     public string Title=>Combined?string.Join(" / ",Episodes.Select(e=>e.Title)):Split?$"{Episode!.Title} (Part {Part} of {PartCount})":Episode?.Title ?? (Feature?"Non-episode feature":"Unresolved");
     public string Category=>Combined?"Combined episodes":Split?"Split episode":Episode is not null?"Episode":Feature?"Feature":"Unresolved";
+    public string DisplayStatus=>Status switch {"source_unavailable"=>"Source unavailable","overridden_conflict"=>"Held by override","stale_human_override"=>"Override expired",_ when HumanDecision!=null&&Episode!=null=>"Human override",_=>Category};
     public int Copies=>Rows.Count;
     public string Detail {get {var review=EvidenceReview.Create(this);return review.Assessment+"\n"+review.Suggestion+"\n\n"+string.Join("\n\n",review.Sections.Select(s=>s.Heading+"\n"+s.Text));}}
 }

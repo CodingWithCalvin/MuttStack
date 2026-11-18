@@ -10,6 +10,7 @@ public sealed class AppSettings
 {
     public NamingOptions Naming {get;set;}=new();
     public string MetadataProvider {get;set;}="tvdb";
+    public bool UseSubtitleMatching {get;set;}=true;
     public string Provider {get;set;}="local";
     public string LocalModel {get;set;}="";
     public string LocalEndpoint {get;set;}="http://127.0.0.1:18765/v1/chat/completions";
@@ -24,6 +25,9 @@ public sealed class AppSettings
     public bool AllowExperimental {get;set;}
     public string DownloadProfile {get;set;}="qwen36-35b";
     public int CpuThreads {get;set;}=8;
+    // Zero preserves existing resource use until prompt processing is tuned separately.
+    public int PromptThreads {get;set;}
+    [JsonIgnore] public int EffectivePromptThreads=>PromptThreads==0?CpuThreads:PromptThreads;
     public int GpuLayers {get;set;}=0;
     // Null preserves the selected model profile default; false explicitly disables thinking.
     public bool? ThinkingEnabled {get;set;}
@@ -47,12 +51,12 @@ public sealed class AppSettings
     [JsonIgnore] public int EffectiveContextSize=>ManagedThinking?Math.Max(ContextSize,32768):ContextSize;
     [JsonIgnore] public int EffectiveOutputTokens=>ManagedThinking?Math.Max(MaxOutputTokens,8192):MaxOutputTokens;
     [JsonIgnore] public int EffectiveTimeoutSeconds=>ManagedThinking?Math.Max(RequestTimeoutSeconds,7200):Provider=="managed"&&GpuLayers==0?Math.Max(RequestTimeoutSeconds,1800):RequestTimeoutSeconds;
-    public InferenceOptions Inference(string? key=null,int? outputTokenLimit=null)=>new(){Provider=Provider,ApiKey=key,AllowCloudDialogue=AllowCloudDialogue,EnableThinking=ManagedThinking,MaxOutputTokens=Math.Min(EffectiveOutputTokens,outputTokenLimit??EffectiveOutputTokens),MaxRequests=MaxRequestsPerRun};
+    public InferenceOptions Inference(string? key=null,int? outputTokenLimit=null,bool allowExcerptVerification=false)=>new(){Provider=Provider,ApiKey=key,AllowCloudDialogue=AllowCloudDialogue,EnableThinking=ManagedThinking,UseEvidenceRetrieval=true,AllowExcerptVerification=allowExcerptVerification,MaxOutputTokens=Math.Min(EffectiveOutputTokens,outputTokenLimit??EffectiveOutputTokens),MaxRequests=MaxRequestsPerRun};
     public void Validate() {
         Naming.Validate();
         if(MetadataProvider is not ("tvdb" or "tmdb" or "tvmaze"))throw new ArgumentException("Unknown metadata provider.");
         if(Provider is not ("local" or "managed" or "openai" or "compatible"))throw new ArgumentException("Unknown model provider.");
-        if(CpuThreads<1||CpuThreads>256||GpuLayers<0||GpuLayers>999||ContextSize<4096||ContextSize>1048576)throw new ArgumentException("Check CPU threads, GPU layers and context size.");
+        if(CpuThreads<1||CpuThreads>256||PromptThreads<0||PromptThreads>256||GpuLayers<0||GpuLayers>999||ContextSize<4096||ContextSize>1048576)throw new ArgumentException("Check generation threads (1–256), prompt threads (0–256), GPU layers and context size.");
         if(MaxOutputTokens<512||MaxOutputTokens>65536||RequestTimeoutSeconds<30||RequestTimeoutSeconds>7200||MaxRequestsPerRun<2||MaxRequestsPerRun>10000)
             throw new ArgumentException("Limits: output 512–65536 tokens, timeout 30–7200 seconds, requests 2–10000.");
         if(string.IsNullOrWhiteSpace(ModelDirectory)||!Path.IsPathFullyQualified(ModelDirectory))throw new ArgumentException("Choose an absolute model storage folder.");

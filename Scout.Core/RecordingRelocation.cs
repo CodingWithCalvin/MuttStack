@@ -12,7 +12,7 @@ public static class RecordingRelocation {
  public static async Task<Dictionary<string,string>> ReconnectAsync(JsonObject report,string root,string ffmpeg,IProgress<string> progress,CancellationToken ct,Func<string,CancellationToken,Task<string?>>? fingerprint=null) {
   MoveExecutor.RequireSettled(report);
   var rows=report.Array("files").OfType<JsonObject>().ToList();
-  foreach(var row in rows.Where(r=>File.Exists(r.Text("path"))&&r.Text("relocation_error")!=""))row.Remove("relocation_error");
+  foreach(var row in rows.Where(r=>File.Exists(r.Text("path")))){row.Remove("relocation_error");row.Remove("source_availability");}
   var missing=rows.Where(r=>!File.Exists(r.Text("path"))).ToList();
   var mapping=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
   if(missing.Count==0)return mapping;
@@ -51,7 +51,8 @@ public static class RecordingRelocation {
   foreach(var row in missing) {
    var matches=choices[row];
    if(matches.Count!=1||choices.Count(c=>c.Value.Contains(matches.FirstOrDefault()??"",StringComparer.OrdinalIgnoreCase))!=1) {
-    row["relocation_error"]=matches.Count==0?"Original path is missing. No uniquely verified replacement was found in the source folder.":"Multiple copies or saved recordings share this fingerprint. Automatic relinking is ambiguous; no path changed.";continue;
+    row["relocation_error"]=matches.Count==0?"Original path is missing. No uniquely verified replacement was found in the source folder.":"Multiple copies or saved recordings share this fingerprint. Automatic relinking is ambiguous; no path changed.";
+    if(matches.Count==0&&!files.Any(p=>PreviewPlanner.Same(p,row.Text("path"))))RecordingAvailability.MarkMissing(row);else row.Remove("source_availability");continue;
    }
    var target=matches[0];var original=Path.GetFullPath(row.Text("path"));
    // Final lightweight check before changing the stored locator.
@@ -59,7 +60,7 @@ public static class RecordingRelocation {
    row["original_path"]??=original;row["recording_id"]??=CollectionResolver.Hash(CollectionResolver.FingerprintKey(row["primary_fingerprint"])!);
    if(row["path_history"] is not JsonArray)row["path_history"]=new JsonArray();
    row.Array("path_history").Add(new JsonObject{["from"]=original,["to"]=target,["verified_at"]=DateTimeOffset.UtcNow.ToString("O"),["method"]="verified-fingerprint"});
-   row["path"]=Path.GetFullPath(target);row["primary_fingerprint"]!["mtime_ns"]=PreviewPlanner.MtimeNs(target);row["source_mtime_ns"]=PreviewPlanner.MtimeNs(target);row.Remove("relocation_error");mapping[original]=Path.GetFullPath(target);
+   row["path"]=Path.GetFullPath(target);row["primary_fingerprint"]!["mtime_ns"]=PreviewPlanner.MtimeNs(target);row["source_mtime_ns"]=PreviewPlanner.MtimeNs(target);row.Remove("relocation_error");row.Remove("source_availability");mapping[original]=Path.GetFullPath(target);
    progress.Report("Reconnected saved analysis: "+Path.GetFileName(original)+" → "+Path.GetFileName(target));
   }
   foreach(var scope in new[]{"issue_review","incremental_review"})

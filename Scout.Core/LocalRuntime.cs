@@ -17,8 +17,7 @@ public sealed class LocalRuntime : IAsyncDisposable
    try{socket.Bind(new IPEndPoint(IPAddress.Loopback,uri.Port));}catch(SocketException){throw new IOException("Local port occupied. Use the existing-endpoint mode or choose another port.");}
   }
   var start=new ProcessStartInfo(executable){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,WorkingDirectory=Path.GetDirectoryName(Path.GetFullPath(executable))!};
-  foreach(var arg in new[]{"-m",s.ModelFile,"--host","127.0.0.1","--port",uri.Port.ToString(),"-c",s.EffectiveContextSize.ToString(),"-ngl",s.GpuLayers.ToString(),"-np","1","--cache-prompt","-t",s.CpuThreads.ToString(),"-tb",s.CpuThreads.ToString(),"--alias",s.LocalModel,"--reasoning",s.ManagedThinking?"on":"off","--reasoning-budget",s.ManagedThinking?"2048":"0","--reasoning-format","deepseek"})start.ArgumentList.Add(arg);
-  if(s.ManagedFullSwaCache)start.ArgumentList.Add("--swa-full");
+  foreach(var arg in Arguments(s,uri.Port))start.ArgumentList.Add(arg);
   var p=Process.Start(start)??throw new IOException("Cannot start local runtime.");var runtime=new LocalRuntime(p);
   p.OutputDataReceived+=(_,_)=>{};p.ErrorDataReceived+=(_,_)=>{};p.BeginOutputReadLine();p.BeginErrorReadLine();
   try {
@@ -31,6 +30,12 @@ public sealed class LocalRuntime : IAsyncDisposable
    }
    throw new TimeoutException("Local model did not become ready within 10 minutes.");
   }catch{await runtime.DisposeAsync();throw;}
+ }
+ public static IReadOnlyList<string> Arguments(AppSettings s,int port) {
+  s.Validate();
+  var args=new List<string>{"-m",s.ModelFile,"--host","127.0.0.1","--port",port.ToString(),"-c",s.EffectiveContextSize.ToString(),"-ngl",s.GpuLayers.ToString(),"-np","1","--cache-prompt","-t",s.CpuThreads.ToString(),"-tb",s.EffectivePromptThreads.ToString(),"--alias",s.LocalModel,"--reasoning",s.ManagedThinking?"on":"off","--reasoning-budget",s.ManagedThinking?"2048":"0","--reasoning-format","deepseek"};
+  if(s.ManagedFullSwaCache)args.Add("--swa-full");
+  return args;
  }
  public async ValueTask DisposeAsync() {
   try{if(!process.HasExited){process.Kill(true);await process.WaitForExitAsync();}}finally{process.Dispose();}

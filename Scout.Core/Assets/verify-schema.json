@@ -1,1 +1,98 @@
-{"type":"object","additionalProperties":false,"properties":{"assessment":{"type":"string","enum":["supported","uncertain","non_episode"]},"coverage":{"type":"string","enum":["complete","partial","combined","unknown"]},"checks":{"type":"array","minItems":0,"maxItems":5,"items":{"type":"object","additionalProperties":false,"properties":{"episode_id":{"type":"integer","enum":["EPISODE_ID"]},"verdict":{"type":"string","enum":["supported","contradicted","insufficient_evidence"]},"supporting_blocks":{"type":"array","items":{"type":"integer","minimum":0,"maximum":0},"maxItems":4},"contradicting_blocks":{"type":"array","items":{"type":"integer","minimum":0,"maximum":0},"maxItems":4},"reason":{"type":"string","maxLength":240}},"required":["episode_id","verdict","supporting_blocks","contradicting_blocks","reason"]}},"note":{"type":"string","maxLength":240}},"required":["assessment","coverage","checks","note"]}
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "assessment": {
+      "type": "string",
+      "enum": [
+        "supported",
+        "uncertain",
+        "non_episode"
+      ]
+    },
+    "coverage": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "partial",
+        "combined",
+        "unknown"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "episode_id": {
+            "type": "integer",
+            "enum": [
+              "EPISODE_ID"
+            ]
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "supported",
+              "contradicted",
+              "insufficient_evidence"
+            ]
+          },
+          "supporting_blocks": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 0
+            },
+            "maxItems": 4
+          },
+          "contradicting_blocks": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 0
+            },
+            "maxItems": 4
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "complete_episode",
+              "incomplete_episode",
+              "preview_or_promo",
+              "recap",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "episode_id",
+          "verdict",
+          "supporting_blocks",
+          "contradicting_blocks",
+          "reason",
+          "content_type"
+        ]
+      }
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 240
+    }
+  },
+  "required": [
+    "assessment",
+    "coverage",
+    "checks",
+    "note"
+  ]
+}

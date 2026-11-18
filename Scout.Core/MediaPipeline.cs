@@ -4,9 +4,10 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Scout.Core.Subtitles;
 namespace Scout.Core;
-public sealed record MatchSettings(string Root,string Catalog,string Output,string Model,string Endpoint,string Ffmpeg="ffmpeg",string Ffprobe="ffprobe",string? DialogueInput=null,IReadOnlyList<string>? SelectedFiles=null,SeriesIdentity? SeriesIdentity=null,bool Restart=false,bool Reanalyze=false,bool ReviewIssues=false,bool NewFilesOnly=false);
-public sealed class MediaPipeline(DialogueMatcher matcher,Func<string,IEnumerable<string>,CancellationToken,Task<string>>? execute=null)
+public sealed record MatchSettings(string Root,string Catalog,string Output,string Model,string Endpoint,string Ffmpeg="ffmpeg",string Ffprobe="ffprobe",string? DialogueInput=null,IReadOnlyList<string>? SelectedFiles=null,SeriesIdentity? SeriesIdentity=null,bool Restart=false,bool Reanalyze=false,bool ReviewIssues=false,bool NewFilesOnly=false,IdentificationScope? Scope=null);
+public sealed class MediaPipeline(DialogueMatcher matcher,Func<string,IEnumerable<string>,CancellationToken,Task<string>>? execute=null,SubtitleMatcher? subtitles=null)
 {
     private Task<string> RunTool(string exe,IEnumerable<string> args,CancellationToken ct)=>(execute??ExecuteAsync)(exe,args,ct);
     public static async Task<string> ExecuteAsync(string exe,IEnumerable<string> args,CancellationToken ct) {
@@ -34,12 +35,14 @@ public sealed class MediaPipeline(DialogueMatcher matcher,Func<string,IEnumerabl
         pause?.Checkpoint();ct.ThrowIfCancellationRequested();
         if(!Directory.Exists(settings.Root))throw new DirectoryNotFoundException("Video folder does not exist.");
         if(PreviewPlanner.Within(settings.Output,settings.Root))throw new InvalidOperationException("Results must be outside the media library.");
-        matcher.ValidateEndpoint(settings.Endpoint);
-        if(string.IsNullOrWhiteSpace(settings.Model))throw new ArgumentException("Choose a local model ID.");
+        if(subtitles==null){matcher.ValidateEndpoint(settings.Endpoint);if(string.IsNullOrWhiteSpace(settings.Model))throw new ArgumentException("Choose a model ID.");}
         var episodes=Data.Catalog(settings.Catalog);
         var reportPath=Path.Combine(settings.Output,"report.json");
         var continuing=settings.Restart||settings.Reanalyze||settings.ReviewIssues||settings.NewFilesOnly;
         var previous=continuing&&ScoutStorage.Exists(reportPath)?Data.Read(reportPath):new JsonObject();
+        var identificationScope=continuing
+            ?IdentificationScope.Read(previous)??settings.Scope??new("legacy")
+            :settings.Scope??new(settings.SelectedFiles==null?"show":"files");
         MoveExecutor.RequireSettled(previous);
         var relocations=new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
         if(continuing&&previous.Array("files").Count>0) {
@@ -81,14 +84,14 @@ public sealed class MediaPipeline(DialogueMatcher matcher,Func<string,IEnumerabl
             var keys=rows.OfType<JsonObject>().Where(r=>selected.Contains(Path.GetFullPath(r.Text("path")))).Select(r=>CollectionResolver.FingerprintKey(r["primary_fingerprint"])).ToHashSet();
             foreach(var link in retainedSplits.ToList())if(keys.Contains(link.Text("fingerprint_a"))||keys.Contains(link.Text("fingerprint_b")))retainedSplits.Remove(link);
         }
-        void SaveCheckpoint()=>Data.Save(reportPath,new JsonObject {["files"]=rows.DeepClone(),["moves"]=previous.Array("moves").DeepClone(),["analysis_generation"]=generation,["issue_review"]=review?.DeepClone(),["incremental_review"]=incrementalReview?.DeepClone(),["split_assignments"]=retainedSplits.DeepClone(),["series_identity"]=JsonSerializer.SerializeToNode(settings.SeriesIdentity,Data.Options),["pipeline"]=DialogueMatcher.Version,["manual_corrections"]=false});
+        void SaveCheckpoint()=>Data.Save(reportPath,new JsonObject {["files"]=rows.DeepClone(),["identification_scope"]=JsonSerializer.SerializeToNode(identificationScope,Data.Options),["moves"]=previous.Array("moves").DeepClone(),["analysis_generation"]=generation,["issue_review"]=review?.DeepClone(),["incremental_review"]=incrementalReview?.DeepClone(),["split_assignments"]=retainedSplits.DeepClone(),["series_identity"]=JsonSerializer.SerializeToNode(settings.SeriesIdentity,Data.Options),["pipeline"]=DialogueMatcher.Version,["human_resolutions"]=previous.Array("human_resolutions").DeepClone(),["manual_corrections"]=previous.Array("human_resolutions").Any(r=>!r.Bool("undone"))});
         if(settings.Reanalyze||settings.ReviewIssues) {
             ct.ThrowIfCancellationRequested();
             Data.Save(Path.Combine(settings.Output,"analysis-history",generation,"report.json"),previous);
             var statuses=CollectionResolver.Resolve(previous).SelectMany(g=>g.Rows.Select(r=>(Path:Path.GetFullPath(r.Text("path")),g.Status))).ToDictionary(x=>x.Path,x=>x.Status,StringComparer.OrdinalIgnoreCase);
             foreach(var old in rows.OfType<JsonObject>().Where(r=>!issues||selected.Contains(Path.GetFullPath(r.Text("path"))))) {
                 if(issues)old["issue_review_reason"]=statuses.GetValueOrDefault(Path.GetFullPath(old.Text("path")),"unfinished");
-                old.Remove("reasoning");old.Remove("conflict_review");old.Remove("conflict_review_pending");old.Remove("conflict_review_error");
+                old.Remove("reasoning");old.Remove("subtitle_match");old.Remove("conflict_review");old.Remove("conflict_review_pending");old.Remove("conflict_review_error");old.Remove("claim_resolution");old.Remove("claim_review_pending");old.Remove("claim_review_error");
                 old["candidates"]=new JsonArray();old["error"]="Awaiting fresh analysis";old["status"]="analysis_pending";
             }
             SaveCheckpoint();
@@ -102,8 +105,8 @@ public sealed class MediaPipeline(DialogueMatcher matcher,Func<string,IEnumerabl
         foreach(var path in paths) {
             pause?.Checkpoint();ct.ThrowIfCancellationRequested();progress.Report($"[{++index}/{paths.Count}] {Path.GetFileName(path)}");
             if(cachedRows.TryGetValue(Path.GetFullPath(path),out var relocated)&&relocated.Text("relocation_error")!="") {SaveRow(relocated.DeepClone().AsObject());progress.Report(relocated.Text("relocation_error"));continue;}
-            if(!settings.Reanalyze&&!settings.ReviewIssues&&settings.Restart&&cachedRows.TryGetValue(Path.GetFullPath(path),out var completed)&&RunRecovery.CanReuse(completed,episodes)) {
-                progress.Report("Reusing successful model result and verified source fingerprints.");continue;
+            if(!settings.Reanalyze&&!settings.ReviewIssues&&settings.Restart&&cachedRows.TryGetValue(Path.GetFullPath(path),out var completed)&&RunRecovery.CanReuse(completed,episodes,settings.SeriesIdentity)) {
+                progress.Report("Reusing successful identification and verified source fingerprints.");continue;
             }
             var row=new JsonObject {["path"]=Path.GetFullPath(path),["matching_method"]="reasoning",["full_dialogue"]=true,["candidates"]=new JsonArray()};
             if(issues)row["issue_review_reason"]=rows.FirstOrDefault(r=>string.Equals(Path.GetFullPath(r.Text("path")),path,StringComparison.OrdinalIgnoreCase)).Text("issue_review_reason","unfinished or competing recording");
@@ -127,13 +130,32 @@ public sealed class MediaPipeline(DialogueMatcher matcher,Func<string,IEnumerabl
                 if(cached!=null&&RunRecovery.SourceUnchanged(cached))row["primary_fingerprint"]=cached["primary_fingerprint"]!.DeepClone();
                 var key=CollectionResolver.Hash(JsonSerializer.Serialize(new{generation,issues,version=DialogueMatcher.Version,revision=DialogueMatcher.RequestRevision,scope=matcher.CacheScope,settings.Endpoint,cues,episodes,settings.Model}));
                 var cachePath=Path.Combine(cache,key+".json");
-                JsonObject result;
-                if(ScoutStorage.Exists(cachePath)){result=Data.Read(cachePath);progress.Report("Reusing exact-input model result.");}
-                else{progress.Report("Reading full dialogue and independently verifying guide evidence…");result=issues?await matcher.ReevaluateConflictAsync(cues,episodes,settings.Model,settings.Endpoint,ct):await matcher.IdentifyAsync(cues,episodes,settings.Model,settings.Endpoint,ct);Data.Save(cachePath,result);}
+                JsonObject? result=null;
+                if(subtitles!=null&&settings.SeriesIdentity is {} series) {
+                    try {
+                        var attempt=await subtitles.IdentifyAsync(cues,episodes,series,progress,ct);
+                        SubtitleResult.Apply(row,episodes,attempt);
+                        if(attempt.Result!=null&&SubtitleResult.Valid(row,episodes,series)) {
+                            result=attempt.Result;progress.Report("Matched subtitle dialogue to "+string.Join(" / ",attempt.Result.Array("matches").Select(m=>episodes.Single(e=>e.Id==m.Int("episode_id")).Code))+"; AI not needed for this file.");
+                        }else progress.Report("Subtitle match unresolved; using AI with the saved dialogue.");
+                    }catch(OperationCanceledException) when(ct.IsCancellationRequested){throw;}
+                    catch(Exception ex) when(ex is IOException or InvalidDataException or HttpRequestException or InvalidOperationException or ArgumentException or System.Text.Json.JsonException or OperationCanceledException) {
+                        row["subtitle_match"]=new JsonObject{["accepted"]=false,["reason"]="Subtitle lookup or validation was unavailable; using AI with saved dialogue."};progress.Report(row["subtitle_match"].Text("reason"));
+                    }
+                }
+                if(result==null) {
+                    row["matching_method"]="reasoning";row.Remove("reasoning");row["candidates"]=new JsonArray();
+                    if(ScoutStorage.Exists(cachePath)){result=Data.Read(cachePath);progress.Report("Reusing exact-input model result.");}
+                    else{progress.Report("Reading full dialogue and independently verifying guide evidence…");result=issues?await matcher.ReevaluateConflictAsync(cues,episodes,settings.Model,settings.Endpoint,ct):await matcher.IdentifyAsync(cues,episodes,settings.Model,settings.Endpoint,ct);Data.Save(cachePath,result);}
+                }
                 row["reasoning"]=result;
+                // Issue review already performed both independent full-guide passes.
+                // Reuse that exact-input verification during collection reconciliation.
+                if(issues&&result.Text("method")==DialogueMatcher.Version)row["conflict_review"]=new JsonObject{["signature"]=ConflictReview.Signature(cues,episodes,matcher,settings.Model,settings.Endpoint),
+                    ["source"]="issue_review",["previous_reasoning"]=cached?["reasoning"]?.DeepClone(),["previous_candidates"]=cached?["candidates"]?.DeepClone()};
                 row["candidates"]=new JsonArray(result.Array("matches").Select(n=>(JsonNode)new JsonObject{
                     ["episode"]=JsonSerializer.SerializeToNode(episodes.Single(e=>e.Id==n.Int("episode_id")),Data.Options),
-                    ["method"]="reasoning",["reason"]=n!["reason"]?.DeepClone(),
+                    ["method"]=row.Text("matching_method"),["reason"]=n!["reason"]?.DeepClone(),
                     ["evidence"]=new JsonArray(n.Array("evidence").Select(b=>(JsonNode)new JsonObject{["start"]=b!["start"]?.DeepClone(),["text"]=b["source_text"]?.DeepClone()}).ToArray())
                 }).ToArray());
                 if(cached!=null&&RunRecovery.SourceUnchanged(cached)) {
@@ -152,9 +174,16 @@ public sealed class MediaPipeline(DialogueMatcher matcher,Func<string,IEnumerabl
                 if(cached!=null&&CollectionResolver.FingerprintKey(cached["primary_fingerprint"])==CollectionResolver.FingerprintKey(row["primary_fingerprint"]))
                     foreach(var field in new[]{"original_path","path_history","duplicate_of"})if(cached[field]!=null)row[field]=cached[field]!.DeepClone();
                 row["status"]="needs_review";
-            }catch(OperationCanceledException){throw;}
+            }catch(OperationCanceledException) when(ct.IsCancellationRequested){
+                // Retain completed evidence and exact-input model caches, but never
+                // present an interrupted file as a finished assignment.
+                row["status"]="interrupted";row["error_code"]="processing_interrupted";
+                row["error"]="Processing stopped by request. Resume Scout will retry this unfinished file.";
+                row["candidates"]=new JsonArray();SaveRow(row);throw;
+            }
+            catch(OperationCanceledException){throw;}
             catch(UsageLimitException){throw;}
-            catch(Exception ex) {if(ex is ModelRequestTimeoutException timeout){row["error_code"]="model_timeout";row["timeout_seconds"]=timeout.TimeoutSeconds;}if(ex.Data["model_attempts"] is string attempts)row["model_attempts"]=JsonNode.Parse(attempts);row["error"]=ex.Message;row["status"]="error";row["candidates"]=new JsonArray();progress.Report("Held for review: "+ex.Message);}
+            catch(Exception ex) {if(ex is ModelRequestTimeoutException timeout){row["error_code"]="model_timeout";row["timeout_seconds"]=timeout.TimeoutSeconds;}if(ex.Data[AssignmentValidation.ReasonKey] is string issue)row["assignment_issue"]=issue;if(ex.Data["context_recovery"] is string contextRecovery)row["context_recovery_attempts"]=JsonNode.Parse(contextRecovery);if(ex.Data["model_attempts"] is string attempts)row["model_attempts"]=JsonNode.Parse(attempts);row["error"]=ex.Message;row["status"]="error";row["candidates"]=new JsonArray();progress.Report("Held for review: "+ex.Message);}
             SaveRow(row);
             pause?.Checkpoint();
         }
@@ -181,6 +210,7 @@ public sealed class MediaPipeline(DialogueMatcher matcher,Func<string,IEnumerabl
         }
         Data.Save(Path.Combine(settings.Output,"report.json"),finalReport);
         await ConflictReview.RunAsync(finalReport,episodes,matcher,settings.Model,settings.Endpoint,()=>Data.Save(reportPath,finalReport),progress,ct,pause,allowedPaths:scoped?selected:null);
+        if(issues)await ClaimReview.RunAsync(finalReport,episodes,matcher,settings.Model,settings.Endpoint,()=>Data.Save(reportPath,finalReport),progress,ct,pause,allowedPaths:selected);
         if(incremental){finalReport["incremental_review"]!["active"]=false;Data.Save(reportPath,finalReport);}
         if(issues){finalReport["issue_review"]!["active"]=false;Data.Save(reportPath,finalReport);}
         Data.Save(Path.Combine(settings.Output,"catalog.json"),new{series_identity=settings.SeriesIdentity,episodes});

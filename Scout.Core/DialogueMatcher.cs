@@ -5,13 +5,13 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 namespace Scout.Core;
-public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? options=null)
+public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? options=null,Func<CancellationToken,Task>? beforeRequest=null)
 {
-    private readonly ModelTransport transport=new(client,options??new());
+    private readonly ModelTransport transport=new(client,options??new(),beforeRequest);
     public string CacheScope=>transport.CacheScope;
     public UsageSnapshot Usage=>transport.Usage;
     public Uri ValidateEndpoint(string endpoint)=>transport.ValidateEndpoint(endpoint);
-    public const string RequestRevision="compact-verifier-candidates-v6";
+    public const string RequestRevision="compact-evidence-retrieval-v22";
     public const string Version="verified-dialogue-v7-multipart1";
     private static string Asset(string name) {
         using var stream=typeof(DialogueMatcher).Assembly.GetManifestResourceStream("Scout.Core.Assets."+name)??throw new InvalidOperationException("Missing matcher asset.");
@@ -47,12 +47,20 @@ public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? 
         return uri;
     }
     public async Task<JsonObject> IdentifyAsync(IReadOnlyList<Cue> cues,IReadOnlyList<Episode> episodes,string model,string endpoint,CancellationToken ct=default) {
-        var initial=await DirectAsync(cues,episodes,model,endpoint,false,ct);
+        if(CompactEvidence)return await IdentifyRetrievedAsync(cues,episodes,model,endpoint,ct);
+        JsonObject initial;
+        try{initial=await DirectAsync(cues,episodes,model,endpoint,false,ct);}
+        catch(ModelContextException){return await IdentifyInCatalogBatchesAsync(cues,episodes,model,endpoint,ct);}
+        catch(InvalidDataException ex) when(GroundableCombination(ex)){return await AuditRejectedCombinationAsync(ex,cues,episodes,model,endpoint,ct);}
+        if(initial.Array("matches").Count==2)return await VerifySavedProposalAsync(cues,episodes,initial,model,endpoint,ct);
         var ids=initial.Array("candidate_checks").Concat(initial.Array("matches")).Concat(initial.Array("alternatives")).Select(n=>n.Int("episode_id")).ToHashSet();
         foreach(var e in Rank(cues,episodes))ids.Add(e.Id);
         var shortlist=episodes.Where(e=>ids.Contains(e.Id)).ToList();
         if(shortlist.Count==0)throw new InvalidDataException("No verification candidates.");
-        var result=await DirectAsync(cues,shortlist,model,endpoint,true,ct);
+        JsonObject result;
+        try{result=await DirectAsync(cues,shortlist,model,endpoint,true,ct);}
+        catch(InvalidDataException ex) when(GroundableCombination(ex)){return await AuditRejectedCombinationAsync(ex,cues,shortlist,model,endpoint,ct);}
+        if(result.Array("matches").Count==2)return await VerifySavedProposalAsync(cues,shortlist,result,model,endpoint,ct);
         if(initial.Text("assessment")==result.Text("assessment")&&initial.Text("coverage")==result.Text("coverage")&&
            initial.Array("matches").Select(m=>m.Int("episode_id")).SequenceEqual(result.Array("matches").Select(m=>m.Int("episode_id")))) {
             result["summary"]=initial["summary"]!.DeepClone();result["summary_source"]="initial_pass";
@@ -61,9 +69,16 @@ public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? 
         result["method"]=Version;return result;
     }
     public async Task<JsonObject> ReevaluateConflictAsync(IReadOnlyList<Cue> cues,IReadOnlyList<Episode> episodes,string model,string endpoint,CancellationToken ct=default) {
+        if(CompactEvidence)return await IdentifyRetrievedAsync(cues,episodes,model,endpoint,ct,fullSearch:true);
         const string instruction="This is an independent collection-conflict review. Search the ENTIRE supplied catalog afresh. Other recordings having claimed an episode is NOT evidence for or against this recording. Do not rely on previous suggestions or recalled episode knowledge. A shared class, performance, location, or character is not a defining-event match. The actual task, relationship, central action and consequence must agree with the guide. Never call a candidate supported while admitting its defining events are absent or different. If no guide fits, abstain. Cite blocks that actually substantiate each defining event.";
-        var first=await DirectAsync(cues,episodes,model,endpoint,true,ct,instruction);
-        var second=await DirectAsync(cues,episodes,model,endpoint,true,ct,instruction+" Independently audit the original source against the full guide.");
+        JsonObject first,second;
+        try{first=await DirectAsync(cues,episodes,model,endpoint,true,ct,instruction);}
+        catch(ModelContextException){return await IdentifyInCatalogBatchesAsync(cues,episodes,model,endpoint,ct);}
+        catch(InvalidDataException ex) when(GroundableCombination(ex)){return await AuditRejectedCombinationAsync(ex,cues,episodes,model,endpoint,ct);}
+        if(first.Array("matches").Count==2)return await VerifySavedProposalAsync(cues,episodes,first,model,endpoint,ct);
+        try{second=await DirectAsync(cues,episodes,model,endpoint,true,ct,instruction+" Independently audit the original source against the full guide.");}
+        catch(InvalidDataException ex) when(GroundableCombination(ex)){return await AuditRejectedCombinationAsync(ex,cues,episodes,model,endpoint,ct);}
+        if(second.Array("matches").Count==2)return await VerifySavedProposalAsync(cues,episodes,second,model,endpoint,ct);
         string Decision(JsonObject r)=>r.Text("assessment")+":"+r.Text("coverage")+":"+string.Join(",",r.Array("matches").Select(m=>m.Int("episode_id")));
         if(Decision(first)!=Decision(second))throw new InvalidDataException("Independent full-guide conflict reviews disagree. No assignment accepted.");
         second["conflict_verification"]=new JsonObject{["method"]="full-guide-conflict-v1",["catalog_count"]=episodes.Count,["independent_result"]=first};
@@ -118,21 +133,22 @@ public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? 
             }
             try {
                 result=verify?CompactVerification.Expand(raw,blocks,episodes):raw.DeepClone().AsObject();
-                Validate(result,blocks,episodes,verify);break;
+                Validate(result,blocks,episodes,verify,requireContentType:true);break;
             }
             catch(InvalidDataException ex) {
-                attempts.Add(new JsonObject {["error"]=ex.Message,["response"]=raw});
-                if(attempt==1){ex.Data["model_attempts"]=attempts.ToJsonString();throw;}
-                source["task"]=source.Text("task")+"\nThe previous response failed validation: "+ex.Message+" Re-evaluate the original dialogue and supplied catalog. Use season and episode numbers to check adjacency, and order matches by playback evidence. Do not force a match to satisfy validation; abstain if unsupported. Return a fresh complete JSON response.";
+                attempts.Add(new JsonObject {["error"]=ex.Message,["assignment_issue"]=ex.Data[AssignmentValidation.ReasonKey]?.ToString(),["response"]=raw});
+                if(AssignmentValidation.IsTerminal(ex)||attempt==1){ex.Data["model_attempts"]=attempts.ToJsonString();throw;}
+                source["task"]=source.Text("task")+"\nThe previous response failed validation: "+ex.Message+" Return a schema-correct response based on the original dialogue and supplied guide. Do not change episode identities merely to satisfy validation. Abstain if unsupported. Return a fresh complete JSON response.";
             }
         }
         if(compactRetry)result["request_adjustments"]="Context overflow: retried without the redundant schema explanation. Complete dialogue, catalog and structured-output validation were preserved.";
         if(attempts.Count>0)result["validation_retries"]=attempts;
         result["dialogue_hash"]=CollectionResolver.Hash(JsonSerializer.Serialize(cues,Data.Options));
         result["model"]=model;result["method"]=verify?Version:"direct-dialogue-v7-multipart1";
+        result["request_revision"]=RequestRevision;
         return result;
     }
-    public static void Validate(JsonObject result,IReadOnlyList<Block> blocks,IReadOnlyList<Episode> episodes,bool verify) {
+    public static void Validate(JsonObject result,IReadOnlyList<Block> blocks,IReadOnlyList<Episode> episodes,bool verify,bool requireContentType=false) {
         var assessment=result.Text("assessment");
         if(assessment is not ("supported" or "uncertain" or "non_episode")||result["summary"] is not JsonValue||result["matches"] is not JsonArray||result["candidate_checks"] is not JsonArray||result["alternatives"] is not JsonArray)
             throw new InvalidDataException("Invalid result structure.");
@@ -157,6 +173,9 @@ public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? 
         foreach(var node in result.Array("candidate_checks")) {
             var check=node!.AsObject();var title=check.Text("episode_title");
             if(!byTitle.ContainsKey(title)||!checks.TryAdd(title,check))throw new InvalidDataException("Unknown or repeated candidate.");
+            var contentType=EpisodeCoverage.Content(check.Text("content_type"));
+            if((requireContentType||contentType!="")&&contentType is not ("complete_episode" or "incomplete_episode" or "preview_or_promo" or "recap" or "unknown"))
+                throw new InvalidDataException("Each candidate needs a valid content_type describing its original dialogue evidence.");
             Indices(check["supporting_blocks"]);Indices(check["contradicting_blocks"]);
             if(verify&&check.Text("guide_event")!=byTitle[title].Overview)throw new InvalidDataException("Guide text does not belong to candidate.");
             check["episode_id"]=byTitle[title].Id;
@@ -164,6 +183,12 @@ public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? 
         foreach(var node in matches) {
             var match=node!.AsObject();var title=match.Text("episode_title");
             if(!checks.TryGetValue(title,out var check)||string.IsNullOrWhiteSpace(match.Text("reason")))throw new InvalidDataException("Missing source comparison.");
+            if(verify)GroundedVerification.RequireDescription(byTitle[title]);
+            var contentType=EpisodeCoverage.Content(check.Text("content_type"));
+            if(contentType is "preview_or_promo" or "recap")throw AssignmentValidation.Reject(AssignmentIssue.PromotionalContent,"Previews, promos and recaps cannot establish an episode assignment or a second combined episode.");
+            if(contentType=="unknown")throw AssignmentValidation.Reject(AssignmentIssue.UncertainStoryRole,"The selected episode's story role is uncertain. No assignment accepted.");
+            if(contentType=="incomplete_episode"&&matches.Count==2)throw AssignmentValidation.Reject(AssignmentIssue.IncompleteCombinedStory,"Combined content requires complete coverage of both catalog episodes. At least one installment is recorded incompletely; sharing a continuous story alone does not make an episode incomplete.");
+            if(contentType!=""&&(coverage=="partial")!=(contentType=="incomplete_episode"))throw AssignmentValidation.Reject(AssignmentIssue.CoverageMismatch,"Recording coverage disagrees with the selected episode's completeness.");
             var cited=Indices(check["supporting_blocks"]);
             if(cited.Count<2||Indices(check["contradicting_blocks"]).Count!=0)throw new InvalidDataException("Match needs two supporting blocks and no contradiction.");
             match["episode_id"]=byTitle[title].Id;match.Remove("episode_title");
@@ -171,8 +196,8 @@ public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? 
         }
         if(matches.Count==2) {
             var first=episodes.Single(e=>e.Id==matches[0].Int("episode_id"));var second=episodes.Single(e=>e.Id==matches[1].Int("episode_id"));
-            if(first.Season!=second.Season||second.Number!=first.Number+1)throw new InvalidDataException("Combined episodes must be consecutive in one season and playback order.");
-            if(Indices(checks[first.Title]["supporting_blocks"]).Max()>=Indices(checks[second.Title]["supporting_blocks"]).Min())throw new InvalidDataException("Combined episodes need distinct ordered dialogue evidence.");
+            if(first.Season!=second.Season||second.Number!=first.Number+1)throw AssignmentValidation.Reject(AssignmentIssue.NonConsecutiveEpisodes,"Combined episodes must be consecutive in one season and playback order. This incompatible assignment is held without an identity-repair retry.");
+            if(Indices(checks[first.Title]["supporting_blocks"]).Max()>=Indices(checks[second.Title]["supporting_blocks"]).Min())throw AssignmentValidation.Reject(AssignmentIssue.OverlappingStories,"Combined episodes need distinct ordered dialogue evidence. This incompatible assignment is held without an identity-repair retry.");
         }
         var selected=matches.Select(n=>n.Int("episode_id")).ToHashSet();
         foreach(var node in result.Array("alternatives")) {

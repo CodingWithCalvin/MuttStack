@@ -10,6 +10,9 @@ public sealed class InferenceOptions
  public bool AllowCloudDialogue {get;init;}
  [System.Text.Json.Serialization.JsonIgnore] public string? ApiKey {get;init;}
  public bool EnableThinking {get;init;}
+ public bool UseEvidenceRetrieval {get;init;}
+ // Opt-in for isolated experiments; production verifies complete dialogue.
+ public bool AllowExcerptVerification {get;init;}
  public int MaxOutputTokens {get;init;}=2800;
  public int MaxRequests {get;init;}=200;
 }
@@ -20,10 +23,10 @@ public sealed class ModelRequestTimeoutException(TimeSpan limit,Exception inner)
  public double TimeoutSeconds=>limit.TotalSeconds;
 }
 public sealed record UsageSnapshot(int Requests,long InputTokens,long OutputTokens,string Provider);
-public sealed class ModelTransport(HttpClient client,InferenceOptions options)
+public sealed class ModelTransport(HttpClient client,InferenceOptions options,Func<CancellationToken,Task>? beforeRequest=null)
 {
  private int requests;private long inputTokens,outputTokens;
- public string CacheScope=>$"{options.Provider}|{options.MaxOutputTokens}|thinking:{options.EnableThinking}|responses-v4-distinct-candidates";
+ public string CacheScope=>$"{options.Provider}|{options.MaxOutputTokens}|thinking:{options.EnableThinking}|retrieval:{options.UseEvidenceRetrieval}|excerpt-audits:{options.AllowExcerptVerification}|responses-v4-distinct-candidates";
  public UsageSnapshot Usage=>new(requests,inputTokens,outputTokens,options.Provider);
  public Uri ValidateEndpoint(string endpoint)=>ConnectionPolicy.Validate(options.Provider,endpoint,options.AllowCloudDialogue,options.ApiKey);
  private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct) {
@@ -40,6 +43,8 @@ public sealed class ModelTransport(HttpClient client,InferenceOptions options)
  }
  public async Task<JsonObject> CompleteAsync(string model,string endpoint,string system,JsonObject source,JsonNode schema,CancellationToken ct) {
   var uri=ValidateEndpoint(endpoint);
+  if(string.IsNullOrWhiteSpace(model))throw new InvalidOperationException("Configure an AI model in Settings to identify unresolved files.");
+  if(beforeRequest!=null)await beforeRequest(ct);
   if(options.MaxOutputTokens<512||options.MaxOutputTokens>65536||options.MaxRequests<2)throw new ArgumentException("Invalid inference limits.");
   if(requests>=options.MaxRequests)throw new UsageLimitException();
   bool responses=options.Provider=="openai",local=options.Provider is "local" or "managed";

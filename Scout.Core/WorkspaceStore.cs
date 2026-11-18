@@ -16,7 +16,10 @@ public sealed class RunWorkspace {
  public SeriesIdentity? SeriesIdentity {get;set;}
  public List<string> DiscoveryFiles {get;set;}=[];
  public List<string> SelectedFiles {get;set;}=[];
+ public IdentificationScope? SelectionScope {get;set;}
  public bool Deleted {get;set;}
+ public bool Archived {get;set;}
+ public string HistoryStatus=>Archived?"Archived · "+Status:Status;
  public string Id {get;set;}=Guid.NewGuid().ToString("N");
  public string Name {get;set;}="New workspace";
  public string Status {get;set;}="Draft";
@@ -55,9 +58,13 @@ public sealed class WorkspaceStore(string root) {
  }
  public void DeleteRun(RunWorkspace run) {
   if(run.Status=="Running")throw new InvalidOperationException("Stop this run before deleting it.");
-  run.Deleted=true;Save(run);
+  var previous=run.Deleted;run.Deleted=true;try{Save(run);}catch{run.Deleted=previous;throw;}
  }
- public void RestoreRun(RunWorkspace run){run.Deleted=false;Save(run);}
+ public void RestoreRun(RunWorkspace run){var previous=run.Deleted;run.Deleted=false;try{Save(run);}catch{run.Deleted=previous;throw;}}
+ public void ArchiveRun(RunWorkspace run,bool archived=true) {
+  if(run.Status=="Running")throw new InvalidOperationException("Pause this Scout before archiving it.");
+  var previous=run.Archived;run.Archived=archived;try{Save(run);}catch{run.Archived=previous;throw;}
+ }
  public string SaveCatalog(RunWorkspace run,string source) {
   Data.Catalog(source);
   var directory=DirectoryFor(run);ScoutStorage.EnsureDirectory(directory);
@@ -72,14 +79,14 @@ public sealed class WorkspaceStore(string root) {
   var path=Path.Combine(directory,"workspace.json");
   ScoutStorage.WriteText(path,JsonSerializer.Serialize(run));
  }
- public List<RunWorkspace> ReadAll(bool recoverInterrupted=false) {
+ public List<RunWorkspace> ReadAll(bool recoverInterrupted=false,bool includeArchived=false) {
   var result=new List<RunWorkspace>();
   foreach(var path in ScoutStorage.List(root,"workspace.json")) {
    try {var run=JsonSerializer.Deserialize<RunWorkspace>(ScoutStorage.ReadText(path));
     if(run==null||Path.GetFullPath(Path.GetDirectoryName(path)!)!=Path.GetFullPath(DirectoryFor(run)))continue;
     if(recoverInterrupted&&run.Status=="Running"){run.Status="Interrupted";run.Events.Add("Processing was interrupted. Use Resume Scout to reuse completed results and retry failed or unfinished files.");Save(run);}
     if(string.IsNullOrWhiteSpace(run.Report)&&ScoutStorage.Exists(Path.Combine(DirectoryFor(run),"report.json")))run.Report=Path.Combine(DirectoryFor(run),"report.json");
-    if(!run.Deleted)result.Add(run);
+    if(!run.Deleted&&(includeArchived||!run.Archived))result.Add(run);
    } catch(JsonException){} catch(IOException){} catch(InvalidDataException){}
   }
   return result.OrderByDescending(x=>x.Updated).ToList();

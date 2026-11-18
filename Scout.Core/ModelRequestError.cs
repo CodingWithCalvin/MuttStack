@@ -17,8 +17,14 @@ public static class ModelRequestError {
   }
   var details=$" Request text: {inputCharacters:N0} characters (not a token count); requested output: {outputTokens:N0} tokens."+Counts();
   var prefix=$"Model service returned HTTP {(int)status}. ";
-  if(context&&status is HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge)
-   return new ModelContextException(prefix+"Request exceeds the model context window. Increase Context tokens in Settings > Local models for Scout-managed models, then retry the affected files. External servers must increase their own context limit."+details,status);
+  if(context&&status is HttpStatusCode.BadRequest or HttpStatusCode.RequestEntityTooLarge) {
+   string recommendation="";
+   if(error?["n_prompt_tokens"] is JsonValue tokens&&tokens.TryGetValue<long>(out var prompt)&&prompt>=0&&prompt<=1048576) {
+    var size=((prompt+outputTokens+1024+4095)/4096)*4096;
+    recommendation=$" For this request, allow at least {size:N0} Context tokens, including the requested response and a safety margin. The setting takes effect on the next managed-model start.";
+   }
+   return new ModelContextException(prefix+"Request exceeds the model context window. Increase Context tokens in Settings > Local models, then resume affected files. External servers must increase their own context limit."+recommendation+details,status);
+  }
   var reason=status switch {
    HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden=>"Provider rejected authentication or model access. Check the configured key and model permissions.",
    HttpStatusCode.TooManyRequests=>"Provider rate or quota limit reached. Check usage limits before retrying.",

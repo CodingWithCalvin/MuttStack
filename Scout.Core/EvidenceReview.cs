@@ -6,10 +6,15 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
 {
  public static EvidenceReview Create(RecordingGroup group) {
   var assessment=group.Status switch {
+   "source_unavailable"=>"Source unavailable — historical suggestion only",
+   "overridden_conflict"=>"Held — another recording was assigned by the user",
+   "stale_human_override"=>"Human override expired — evidence or series changed",
    "unresolved_conflict"=>"Unresolved conflict — do not assign",
    "invalid_model_output"=>"Invalid model output — review required",
    "source_or_model_error"=>"Processing error — review required",
    "partial_unverified"=>"Partial episode — complementary recording not verified",
+   _ when group.HumanDecision!=null&&group.Episode!=null=>"Human override — assignment forced by the user",
+   _ when group.Episode!=null&&group.Rows.All(Subtitles.SubtitleResult.IsSubtitle)=>"Subtitle dialogue supports this provider assignment — suggestion",
    _ when group.Combined=>"Combined episodes — dialogue supports two consecutive episodes",
    _ when group.Split=>"Split episode — complementary parts independently verified",
    _ when group.Feature=>"Non-episode content suggested",
@@ -19,9 +24,12 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
   };
   var suggestion=group.Episode is {} episode?$"{group.Code} · {group.Title}":"No episode assignment";
   var sections=new List<EvidenceSection>();
+  if(group.Status=="source_unavailable")sections.Add(new("Why this is held","The saved source is missing and no verified replacement was found. Its history is retained, but it does not reserve an episode or block an available recording."));
+  if(group.Status=="overridden_conflict")sections.Add(new("Human conflict resolution","A forceful assignment gives this episode to another recording. This file remains held; its original model suggestions are preserved."));
+  if(group.HumanDecision is {} human)sections.Add(new("Human override",human.Text("recorded_at")+"\n"+human.Text("note")+"\nThe model's original assessment below was not edited. Undo override restores automatic conflict handling."));
   if(group.Status=="unresolved_conflict")sections.Add(new("Why this is held","Different recordings compete for the same episode, or duplicate copies disagree. Individual model suggestions below are not an accepted assignment."));
   if(group.CompetingRecordings.Count>0)sections.Add(new("Competing recordings",string.Join("\n",group.CompetingRecordings)));
-  if(group.Duplicate)sections.Add(new("Duplicate copies",$"{group.Copies} identical recordings share this review and one episode assignment."));
+  if(group.Duplicate)sections.Add(new("Duplicate copies",group.DialogueCopies?$"{group.Copies} recordings have identical complete normalized dialogue and compatible durations. Encodings differ; every copy is retained under one assignment.":$"{group.Copies} identical recordings share this review and one episode assignment."));
   if(group.SplitEvidence is {} split) {
    sections.Add(new("Verified split order",$"This recording is Part {group.Part} of {group.PartCount} of {group.Code}. Exact copies of this part are grouped separately from the other part."));
    sections.Add(new("Continuity verification",split["verification"].Text("continuity")));
@@ -29,6 +37,16 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
   }
   foreach(var row in group.Rows) {
    sections.Add(new("Recording",row.Text("path")));
+   if(row["subtitle_match"] is JsonObject subtitle) {
+    bool current=Subtitles.SubtitleResult.IsSubtitle(row);
+    sections.Add(new(current?"Subtitle matching":"Subtitle stage before AI",subtitle.Text("reason")+"\n"+subtitle.Text("note")));
+    if(subtitle["best"] is JsonObject best) {
+     sections.Add(new("Subtitle references",string.Join("\n",best.Array("references").Select(r=>r.Text("name")+"\n"+r.Text("url")))));
+     sections.Add(new("Provider mapping",subtitle.Text("provider").ToUpperInvariant()+" series "+subtitle.Text("series_id")+"\n"+best["link"].Text("method").Replace('-',' ')+"\nUpload numbering is not used as provider numbering."));
+     if(best["overlap"] is JsonObject overlap)sections.Add(new("Dialogue correspondence",$"{overlap["source_coverage"]!.GetValue<double>():P1} of source sequences; {overlap["reference_coverage"]!.GetValue<double>():P1} of reference sequences. These are text-overlap measurements, not model confidence."));
+     if(best.Array("parts").Count>0)sections.Add(new("Combined subtitle references","Separate, substantial dialogue portions occur in the expected order. Short previews and repeated parts do not qualify."));
+    }
+   }
    if(!string.IsNullOrWhiteSpace(row.Text("error")))sections.Add(new("Processing error",row.Text("error")));
    if(row.Bool("move_pending"))sections.Add(new("Move needs reconciliation","Generate the move preview to verify the destination of an interrupted move. No assignment or further move is accepted until its location is verified."));
    if(row.Text("relocation_error")!="")sections.Add(new("File location unresolved",row.Text("relocation_error")));
@@ -37,13 +55,21 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
    if(row.Text("conflict_review_error")!="")sections.Add(new("Automated conflict review",row.Text("conflict_review_error")));
    if(row.Bool("conflict_review_pending"))sections.Add(new("Automated conflict review","Paused or incomplete. Resume Scout to finish checking all competing recordings."));
    if(row["conflict_review"]!=null)sections.Add(new("Automated conflict review","Re-evaluated against the full episode guide with two independent dialogue checks. Collection uniqueness rules still apply."));
+   if(row["claim_resolution"] is {} resolution)sections.Add(new("Focused claim resolution",resolution.Text("summary","Individual guide checks are saved here. See pending status or errors below before accepting an assignment.")));
+   if(row.Bool("claim_review_pending"))sections.Add(new("Focused review pending","Resume Scout to finish the saved individual claim checks. No assignment is accepted while this check is incomplete."));
+   if(row.Text("claim_review_error")!="")sections.Add(new("Focused review error",row.Text("claim_review_error")));
    if(row.Text("issue_review_reason")!="")sections.Add(new("Automated issue review","Included because: "+row.Text("issue_review_reason").Replace('_',' ')+". The current outcome is shown above; incomplete or inconclusive checks remain held."));
    var reasoning=row["reasoning"];
+   if(reasoning?["grounded_verification"] is JsonObject auditScope&&auditScope.ContainsKey("full_dialogue")) {
+    sections.Add(new("Dialogue examined",auditScope.Bool("full_dialogue")?"Complete original dialogue.":$"Selected original passages: {auditScope.Int("included_blocks")} of {auditScope.Int("total_blocks")} blocks. Unseen passages were not verified; this remains a model-supported suggestion."));
+    if(auditScope.Text("fallback_reason")!="")sections.Add(new("Full-dialogue fallback",auditScope.Text("fallback_reason")));
+   }
    if(reasoning.Text("coverage")!="")sections.Add(new("Recording coverage",reasoning.Text("coverage")));
    if(reasoning.Text("request_adjustments")!="")sections.Add(new("Request recovery",reasoning.Text("request_adjustments")));
    var modelAssessment=reasoning.Text("assessment");
-   if(modelAssessment!="")sections.Add(new("Model assessment",modelAssessment switch {"supported"=>"Supported by dialogue (not a guarantee of correctness)","uncertain"=>"Uncertain — insufficient evidence","non_episode"=>"Likely non-episode content",_=>modelAssessment}));
-   if(reasoning.Text("summary")!="")sections.Add(new("Dialogue summary",reasoning.Text("summary")));
+   if(modelAssessment!="")sections.Add(new(Subtitles.SubtitleResult.IsSubtitle(row)?"Subtitle assessment":"Model assessment",modelAssessment switch {"supported"=>"Supported by dialogue (not a guarantee of correctness)","uncertain"=>"Uncertain — insufficient evidence","non_episode"=>"Likely non-episode content",_=>modelAssessment}));
+   if(reasoning?["recording_decision"] is JsonObject recording)sections.Add(new("Recording coverage decision",recording.Text("kind").Replace('_',' ')+"\n"+recording.Text("reason")));
+   else if(reasoning.Text("summary")!="")sections.Add(new("Dialogue summary",reasoning.Text("summary")));
    var cues=row["dialogue"].Array("cues").Select(n=>new Cue(n?["start"]?.GetValue<double>()??0,n.Text("text"))).ToList();
    var blocks=DialogueMatcher.Blocks(cues);
    if(group.SplitEvidence is {} proof) {
@@ -58,6 +84,7 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
     sections.Add(new("Suggested episode",e==null?"No episode details saved":$"{e.Code} · {e.Title}"));
     if(candidate.Text("reason")!="")sections.Add(new("Why it was suggested",candidate.Text("reason")));
     if(e?.Overview is {Length:>0} overview)sections.Add(new("Episode guide",overview));
+    if(e?.DescriptionSource is {} description)sections.Add(new("Description source",$"{description.Provider.ToUpperInvariant()} · episode {description.EpisodeId}\n{description.Url}\nSupplemental description only; the selected catalog controls episode identity and numbering."));
     var quotes=candidate.Array("evidence");
     foreach(var quote in quotes) {
      var start=quote?["start"]?.GetValue<double>()??0;var text=quote.Text("text",quote.Text("source_text"));
@@ -70,6 +97,16 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
    }
    foreach(var check in reasoning.Array("candidate_checks")) {
     sections.Add(new("Candidate check · "+check.Text("episode_title",$"Episode ID {check.Int("episode_id")}"),check.Text("event_comparison","No comparison explanation saved.")));
+    if(check.Text("content_type")!="")sections.Add(new("Source context",EpisodeCoverage.Content(check.Text("content_type")).Replace('_',' ')));
+    if(check.Text("recording_scope")!="")sections.Add(new("Episode coverage",EpisodeCoverage.Scope(check.Text("recording_scope")).Replace('_',' ')));
+    foreach(var fact in check.Array("guide_grounding")) {
+     var text=fact.Text("guide_text");
+     foreach(var quote in fact.Array("evidence")) {
+      var block=blocks.FirstOrDefault(b=>b.Index==quote.Int("block",-1));
+      text+="\n"+(block==null?"":$"[{Time(block.Start)}] ")+quote.Text("source_quote",quote.Text("quote"));
+     }
+     sections.Add(new("Guide statement · "+fact.Text("verdict").Replace('_',' '),text));
+    }
     foreach(var id in check.Array("contradicting_blocks")) {
      var block=blocks.FirstOrDefault(b=>b.Index==id?.GetValue<int>());
      sections.Add(new("Contradicting dialogue",block==null?$"Source block {id} — original dialogue unavailable.":$"[{Time(block.Start)}] {block.SourceText}"));

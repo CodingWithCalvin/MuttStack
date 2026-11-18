@@ -15,6 +15,16 @@ static class RuntimeTests {
    Assert(RuntimeDownloads.Profile(new()).Id=="b11908-cpu");Assert(RuntimeDownloads.Profile(new(){GpuLayers=1}).Id=="b11908-vulkan");
    Throws(()=>RuntimeDownloads.Profile(new(){DownloadProfile="unknown"}));
   });
+  test("Prompt threads persist independently and preserve CPU-only thinking-off runtime arguments",()=>{
+   var s=new AppSettings{Provider="managed",DownloadProfile="gemma4-31b",CpuThreads=8,PromptThreads=16,GpuLayers=0,ThinkingEnabled=false};
+   var store=new SettingsStore(Path.Combine(temp,"thread-settings"));store.Save(s);s=store.Load();
+   Assert(s.CpuThreads==8&&s.PromptThreads==16&&s.EffectivePromptThreads==16);
+   var args=LocalRuntime.Arguments(s,12345).ToList();
+   string Value(string name)=>args[args.IndexOf(name)+1];
+   Assert(Value("-t")=="8"&&Value("-tb")=="16"&&Value("-ngl")=="0"&&Value("--reasoning")=="off"&&args.Contains("--swa-full"));
+   s.PromptThreads=0;Assert(s.EffectivePromptThreads==8);s.CpuThreads=4;Assert(s.EffectivePromptThreads==4);
+   foreach(int invalid in new[]{-1,257}){s.PromptThreads=invalid;Throws(s.Validate);}
+  });
   test("Runtime install reuses verified files and rejects tampering",()=>{
    var archive=Archive("valid-runtime","llama-server.exe");var target=Path.Combine(temp,"runtime-installed");
    var exe=RuntimeDownloads.InstallAsync(archive,target,progress,default).GetAwaiter().GetResult();

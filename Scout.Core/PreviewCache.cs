@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 namespace Scout.Core;
 public static class PreviewCache {
- public static string Signature(JsonObject report,string root,string series,IReadOnlyList<Episode> catalog,NamingOptions naming,SeriesIdentity? identity)=>CollectionResolver.Hash(JsonSerializer.Serialize(new{version=3,report,root=Path.GetFullPath(root),series,catalog,naming,identity},Data.Options));
+ public static string Signature(JsonObject report,string root,string series,IReadOnlyList<Episode> catalog,NamingOptions naming,SeriesIdentity? identity)=>CollectionResolver.Hash(JsonSerializer.Serialize(new{version=6,report,root=Path.GetFullPath(root),series,catalog,naming,identity},Data.Options));
  private static string State(MovePlan plan) {
   var paths=plan.Items.SelectMany(i=>new[]{i.Source,i.Destination}).Where(p=>p!=null).Cast<string>().Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase);
   var states=paths.Select(p=> {

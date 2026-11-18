@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 namespace Scout.Core;
@@ -17,26 +18,37 @@ public static class CollectionResolver
         if(rows.Select(r=>Path.GetFullPath(r.Text("path"))).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=rows.Count)
             throw new InvalidDataException("Duplicate input path.");
         var groups=new List<RecordingGroup>();
-        foreach(var batch in rows.GroupBy(r=>FingerprintKey(r["primary_fingerprint"])??Path.GetFullPath(r.Text("path")).ToUpperInvariant())) {
+        foreach(var batch in rows.GroupBy(r=>RecordingAvailability.Missing(r)?"missing:"+Path.GetFullPath(r.Text("path")):FingerprintKey(r["primary_fingerprint"])??Path.GetFullPath(r.Text("path")).ToUpperInvariant())) {
             var entries=batch.ToList();var claims=new Dictionary<int,Episode>();var votes=new List<string?>();
-            bool invalid=false,blocked=false;
+            bool invalid=false,blocked=false,missing=entries.All(RecordingAvailability.Missing),staleOverride=false;
+            JsonObject? human=null;
             foreach(var row in entries) {
                 var candidates=row.Array("candidates");
+                var decision=HumanResolution.For(report,row);
+                bool forced=decision!=null&&HumanResolution.Valid(report,row,decision);
+                staleOverride|=decision!=null&&!forced;if(forced)human=decision;
                 bool combined=MultipartEvidence.Combined(row);
-                bool bad=(candidates.Count>1||row["reasoning"].Text("coverage")=="combined")&&!combined||row["reasoning"].Text("coverage")=="partial"&&!MultipartEvidence.Partial(row);
+                bool bad=!forced&&((candidates.Count>1||row["reasoning"].Text("coverage")=="combined")&&!combined||row["reasoning"].Text("coverage")=="partial"&&!MultipartEvidence.Partial(row)||Subtitles.SubtitleResult.IsSubtitle(row)&&!Subtitles.SubtitleResult.Valid(row,identity:report["series_identity"]?.Deserialize<SeriesIdentity>(Data.Options)));
                 invalid|=bad;
-                bool error=!string.IsNullOrEmpty(row.Text("error"))||row.Bool("source_changed")||row.Text("relocation_error")!=""||row.Bool("move_pending")||row.Bool("conflict_review_pending")||row.Text("conflict_review_error")!="";blocked|=error;
-                var chosen=(bad||combined?candidates:candidates.Take(1)).Select(c=>Data.Episode(c!["episode"]!)).ToList();
+                bool error=row.Bool("source_changed")||row.Text("relocation_error")!=""||row.Bool("move_pending")||!forced&&(!string.IsNullOrEmpty(row.Text("error"))||row.Bool("conflict_review_pending")||row.Text("conflict_review_error")!=""||row.Bool("claim_review_pending")||row.Text("claim_review_error")!="");blocked|=error;
+                var chosen=missing||staleOverride?[]:forced?new List<Episode>{Data.Episode(decision!["episode"]!)}:(bad||combined?candidates:candidates.Take(1)).Select(c=>Data.Episode(c!["episode"]!)).ToList();
                 foreach(var e in chosen)claims[e.Id]=e;
-                votes.Add(chosen.Count>0&&!error?string.Join(",",chosen.Select(e=>e.Id))+(MultipartEvidence.Partial(row)?":partial":":complete"):null);
+                votes.Add(chosen.Count>0&&!error?string.Join(",",chosen.Select(e=>e.Id))+(!forced&&MultipartEvidence.Partial(row)?":partial":":complete"):null);
             }
-            var status=invalid?"invalid_model_output":blocked?"source_or_model_error":
+            if(staleOverride)claims.Clear();
+            var status=missing?"source_unavailable":staleOverride?"stale_human_override":invalid?"invalid_model_output":blocked?"source_or_model_error":
                 entries.Count>1&&votes.Distinct().Count()>1?"unresolved_conflict":
-                votes.Distinct().Count()==1&&votes[0]!=null?(entries.All(MultipartEvidence.Partial)?"partial_unverified":"suggested"):"unassigned";
+                votes.Distinct().Count()==1&&votes[0]!=null?(human==null&&entries.All(MultipartEvidence.Partial)?"partial_unverified":"suggested"):"unassigned";
             groups.Add(new RecordingGroup {Id=Hash(string.Join("\n",entries.Select(r=>r.Text("path")).Order(StringComparer.Ordinal)))[..16],
-                Rows=entries,Claims=claims.Values.ToList(),Status=status,Episodes=status=="suggested"?claims.Values.ToList():[]});
+                Rows=entries,Claims=claims.Values.ToList(),Status=status,Episodes=status=="suggested"?claims.Values.ToList():[],HumanDecision=human});
         }
-        foreach(var claim in groups.SelectMany(g=>g.Claims.Select(e=>(e.Id,Group:g))).GroupBy(p=>p.Id)) {
+        DialogueCopies.Merge(groups);
+        var winners=groups.Where(g=>g.HumanDecision!=null&&g.Status=="suggested").GroupBy(g=>g.Episode!.Id)
+            .ToDictionary(g=>g.Key,g=>g.OrderByDescending(x=>HumanResolution.Order(report,x.HumanDecision!)).First());
+        foreach(var group in groups.Where(g=>g.Claims.Any(e=>winners.TryGetValue(e.Id,out var winner)&&winner!=g))) {
+            group.Status="overridden_conflict";group.Episodes=[];
+        }
+        foreach(var claim in groups.Where(g=>g.Status!="overridden_conflict").SelectMany(g=>g.Claims.Select(e=>(e.Id,Group:g))).GroupBy(p=>p.Id)) {
             var contenders=claim.Select(p=>p.Group).Distinct().ToList();
             bool verifiedSplit=false;
             if(contenders.Count==2&&contenders.All(g=>g.Status=="partial_unverified"&&g.Claims.Count==1)) {

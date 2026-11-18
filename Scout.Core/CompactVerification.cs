@@ -15,7 +15,7 @@ public static class CompactVerification
         var result=new JsonObject{["assessment"]=raw["assessment"]?.DeepClone(),["coverage"]=raw["coverage"]?.DeepClone(),
             ["summary"]=note,["candidate_checks"]=new JsonArray(),["matches"]=new JsonArray(),["alternatives"]=new JsonArray()};
         foreach(var node in checks) {
-            if(node is not JsonObject check||check.Count!=5||check["episode_id"] is not JsonValue idValue||!idValue.TryGetValue<int>(out var id)||!byId.TryGetValue(id,out var episode))
+            if(node is not JsonObject check||check.Count!=6||check["episode_id"] is not JsonValue idValue||!idValue.TryGetValue<int>(out var id)||!byId.TryGetValue(id,out var episode))
                 throw new InvalidDataException("Unknown verification candidate; use only an episode ID from the supplied catalog.");
             if(!seen.Add(id))
                 throw new InvalidDataException("Repeated verification candidate. Return only ONE check per episode ID, combining its main story and subplots into that check. Checks are per episode, never per event.");
@@ -27,7 +27,7 @@ public static class CompactVerification
             if(verdict=="contradicted"&&contradict.Count==0)throw new InvalidDataException("Contradiction needs an original dialogue block.");
             var reason=check.Text("reason");
             result.Array("candidate_checks").Add(new JsonObject{["episode_title"]=episode.Title,["supporting_blocks"]=check["supporting_blocks"]!.DeepClone(),
-                ["contradicting_blocks"]=check["contradicting_blocks"]!.DeepClone(),["event_comparison"]=reason,["guide_event"]=episode.Overview,["verdict"]=verdict});
+                ["contradicting_blocks"]=check["contradicting_blocks"]!.DeepClone(),["event_comparison"]=reason,["guide_event"]=episode.Overview,["verdict"]=verdict,["content_type"]=check["content_type"]?.DeepClone()});
             if(verdict=="supported")result.Array("matches").Add(new JsonObject{["episode_title"]=episode.Title,["reason"]=reason});
             else if(result.Array("alternatives").Count<2)result.Array("alternatives").Add(new JsonObject{["episode_title"]=episode.Title,["reason_against"]=reason});
         }
@@ -50,6 +50,6 @@ public static class CompactVerification
             }
             return indices;
         }
-        void ValidateCopy()=>DialogueMatcher.Validate(result.DeepClone().AsObject(),blocks,episodes,true);
+        void ValidateCopy()=>DialogueMatcher.Validate(result.DeepClone().AsObject(),blocks,episodes,true,requireContentType:true);
     }
 }

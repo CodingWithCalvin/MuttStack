@@ -238,6 +238,39 @@ static class MultipartTests {
    var plan=PreviewPlanner.Create(report,temp,"Show",[one,two]);var item=plan.Items.Single();
    Assert(item.Category=="combined"&&item.Destination!.Contains("S01E01-E02")&&item.Destination.Contains("Opening")&&item.Destination.Contains("Aftermath")&&item.Action=="rename/move"&&plan.NotIdentified.Count==0);
   });
+  test("A combined numbered story uses its shared title and retains both provider episode IDs",()=>{
+   foreach(var suffixes in new[]{(" (1)"," (2)"),(" (Part 1)"," (Part 2)"),(" - Part 1"," - Part 2"),(" 1"," 2"),(" (Part 1 of 2)"," (Part 2 of 2)")}) {
+    var first=one with {Title="Encounter at Farpoint"+suffixes.Item1};var second=two with {Title="Encounter at Farpoint"+suffixes.Item2};
+    var options=new NamingOptions();
+    Assert(options.AssignmentName("Star Trek",[first,second])=="Star Trek - S01E01-E02 - Encounter at Farpoint");
+    Assert(options.FileName("Star Trek",first).EndsWith(first.Title));
+    var dotted=new NamingOptions{PathTemplate="Season {season:00}\\{series.replaceWhitespace(\".\")}-{code}-{titles.join(\" and \").remove(punctuation).replaceWhitespace(\".\")}"};
+    Assert(dotted.AssignmentName("Star Trek",[first,second])=="Star.Trek-S01E01-E02-Encounter.at.Farpoint");
+    Assert(dotted.EquivalentAssignmentName("Star.Trek-S01E01-E02-Encounter.at.Farpoint.mkv","Star Trek",[first,second]));
+    Assert(!dotted.EquivalentAssignmentName("Star.Trek-S01E01-Encounter.at.Farpoint.mkv","Star Trek",[first,second]));
+   }
+   var a=one with {Title="Encounter at Farpoint (1)"};var b=two with {Title="Encounter at Farpoint (2)"};
+   var row=Row("farpoint-input.mkv",'f',"farpoint","combined",a,b);var report=Report(row);var before=report.ToJsonString();
+   var item=PreviewPlanner.Create(report,temp,"Star Trek",[a,b],naming:new(){PreserveCorrectNames=false}).Items.Single();
+   Assert(Path.GetFileName(item.Destination)=="Star Trek - S01E01-E02 - Encounter at Farpoint.mkv");
+   Assert(item.Episodes.SequenceEqual(new[]{a,b})&&report.ToJsonString()==before);
+   row=Row("Season 01/Star.Trek-S01E01-E02-Encounter.at.Farpoint.mkv",'e',"farpoint","combined",a,b);
+   Assert(PreviewPlanner.Create(Report(row),temp,"Star Trek",[a,b]).Items.Single().Action=="unchanged");
+  });
+  test("Distinct cartoon titles and meaningful numbers never collapse into one title",()=>{
+   foreach(var titles in new[]{("Space Chicken","Steak Night"),("Story 1","Different Story 2"),("Story (2)","Story (3)"),("Room 101","Room 102"),("Story (2011)","Story (2012)"),("Story (1)","Story Returns (2)")}) {
+    var a=one with {Title=titles.Item1};var b=two with {Title=titles.Item2};
+    foreach(var options in new[]{new NamingOptions{CombinedTitleSeparator=" and "},new NamingOptions{PathTemplate="Season {season:00}\\{series} - {code} - {titles.join(\" and \")}"},new NamingOptions{PathTemplate="Season {season:00}\\{series} - {code} - {title}"}})
+     Assert(options.AssignmentName("Show",[a,b])==$"Show - S01E01-E02 - {a.Title} and {b.Title}");
+   }
+  });
+  test("Previously correct verbose multipart titles are preserved while standardizing uses the common title",()=>{
+   var a=one with {Title="Encounter at Farpoint (1)"};var b=two with {Title="Encounter at Farpoint (2)"};
+   foreach(var options in new[]{new NamingOptions(),new NamingOptions{PathTemplate="Season {season:00}\\{series} - {code} - {titles.join(\" and \")}"}}) {
+    Assert(options.EquivalentAssignmentName("Star.Trek-S01E01-E02-Encounter.at.Farpoint.1.and.Encounter.at.Farpoint.2.mkv","Star Trek",[a,b]));
+    Assert(!options.EquivalentAssignmentName("Star.Trek-S01E01-E02-Encounter.at.Farpoint.1.and.Unrelated.2.mkv","Star Trek",[a,b]));
+   }
+  });
   test("Combined validation rejects alternatives overlapping blocks and nonconsecutive numbers",()=>{
    var cues=Cues("source");var result=Result(cues,"combined",one,two);result.Array("candidate_checks")[1]!["supporting_blocks"]=new JsonArray(1,2);
    Reject(()=>DialogueMatcher.Validate(result,DialogueMatcher.Blocks(cues),[one,two],true));
@@ -257,6 +290,7 @@ static class MultipartTests {
   test("Verified split pair uses ordered part suffixes and one catalog assignment",()=>{
    var a=Row("half-a.mkv",'a',"beginning","partial",one);var b=Row("half-b.mkv",'b',"ending","partial",one);var report=Report(a,b);report["split_assignments"]=new JsonArray(Link(a,b,1));
    var groups=CollectionResolver.Resolve(report);Assert(groups.All(g=>g.Split)&&groups[0].Part==2&&groups[1].Part==1);
+   report["identification_scope"]=JsonSerializer.SerializeToNode(new IdentificationScope("show"),Data.Options);
    var plan=PreviewPlanner.Create(report,temp,"Show",[one,two]);Assert(plan.Items.All(i=>i.Category=="split"&&i.Action=="rename/move"));
    Assert(plan.Items.Any(i=>i.Destination!.Contains("(Part 1 of 2)"))&&plan.Items.Any(i=>i.Destination!.Contains("(Part 2 of 2)"))&&plan.NotIdentified.Single().Id==two.Id);
    Assert(EvidenceReview.Create(groups[0]).Sections.Any(s=>s.Heading.StartsWith("Split continuity evidence")));
@@ -310,12 +344,11 @@ static class MultipartTests {
    row["reasoning"]!.Array("candidate_checks")[0]!["contradicting_blocks"]=new JsonArray(1);
    Assert(!MultipartEvidence.Combined(row));
   });
-  test("Invalid model output retries once using original evidence and numbered guide",()=>{
+  test("Incompatible combined identities stop without a numbering repair while malformed output may retry",()=>{
    var cues=Cues("retry");var invalid=Result(cues,"combined",two,one);
    var handler=new Handler([invalid,Result(cues,"combined",one,two),Result(cues,"combined",one,two)]);using var client=new HttpClient(handler);
-   var result=new DialogueMatcher(client).IdentifyAsync(cues,[one,two],"model","http://127.0.0.1:1234/v1/chat/completions").GetAwaiter().GetResult();
-   Assert(handler.Requests.Count==3&&result["verification"]!["initial_result"]!.Array("validation_retries").Count==1);
-   Assert(handler.Requests[0].Contains("season")&&handler.Requests[1].Contains("previous response failed validation"));
+   Reject(()=>new DialogueMatcher(client).DirectAsync(cues,[one,two],"model","http://127.0.0.1:1234/v1/chat/completions",false).GetAwaiter().GetResult());
+   Assert(handler.Requests.Count==1&&handler.Requests[0].Contains("season"));
    var bad=Result(cues,"unknown");bad["assessment"]="supported";
    var failures=new Handler([bad,bad]);using var other=new HttpClient(failures);
    Reject(()=>new DialogueMatcher(other).DirectAsync(cues,[one,two],"model","http://127.0.0.1:1234/v1/chat/completions",false).GetAwaiter().GetResult());
@@ -380,6 +413,40 @@ static class MultipartTests {
    try {new MediaPipeline(new DialogueMatcher(client)).RunAsync(settings,new InlineProgress(_=>{}),default,pause).GetAwaiter().GetResult();throw new Exception("Expected pause");}catch(ScoutPausedException){}
    Assert(Data.Read(Path.Combine(output,"report.json")).ToJsonString()==before&&handler.Requests.Count==0);
   });
+  test("Force stop cancels the current model request checkpoints evidence and resumes only unfinished files",()=>{
+   var root=Path.Combine(temp,"force-library");var output=Path.Combine(temp,"force-output");var catalog=Path.Combine(output,"catalog.json");
+   var three=new Episode(103,1,3,"Homecoming","The team arrives home and celebrates.");
+   var done=Row("force-library/done.mkv",'a',"done","complete",one);
+   var active=Row("force-library/active.mkv",'b',"active","complete",two);var pending=Row("force-library/pending.mkv",'c',"pending","complete",three);
+   foreach(var row in new[]{active,pending}) {row["error"]="Awaiting analysis";row["full_dialogue"]=true;row["size"]=row["primary_fingerprint"]!["size"]!.DeepClone();row["source_mtime_ns"]=row["primary_fingerprint"]!["mtime_ns"]!.DeepClone();row["sampled_digest"]=row["primary_fingerprint"]!["sampled_digest"]!.DeepClone();}
+   Data.Save(catalog,new{episodes=new[]{one,two,three}});var reportPath=Path.Combine(output,"report.json");Data.Save(reportPath,Report(done,active,pending));
+   using var stop=new CancellationTokenSource();
+   var handler=new CancelOnceHandler([Result(Cues("active"),"complete",two),Result(Cues("active"),"complete",two),Result(Cues("pending"),"complete",three),Result(Cues("pending"),"complete",three)],()=>stop.Cancel());
+   using var http=new HttpClient(handler);var pipeline=new MediaPipeline(new DialogueMatcher(http),(_,_,_)=>throw new Exception("Saved dialogue and fingerprints must be reused"));
+   var settings=new MatchSettings(root,catalog,output,"model","http://127.0.0.1:1234/v1/chat/completions",SelectedFiles:[done.Text("path"),active.Text("path"),pending.Text("path")],Restart:true);
+   try{pipeline.RunAsync(settings,new InlineProgress(_=>{}),stop.Token).GetAwaiter().GetResult();throw new Exception("Expected immediate cancellation");}catch(OperationCanceledException){Assert(stop.IsCancellationRequested);}
+   var checkpoint=Data.Read(reportPath);var interrupted=checkpoint.Array("files").Single(r=>PreviewPlanner.Same(r.Text("path"),active.Text("path")))!.AsObject();
+   Assert(handler.Requests==1&&interrupted.Text("status")=="interrupted"&&interrupted.Text("error_code")=="processing_interrupted"&&interrupted.Array("candidates").Count==0);
+   Assert(JsonNode.DeepEquals(interrupted["dialogue"],active["dialogue"])&&JsonNode.DeepEquals(interrupted["primary_fingerprint"],active["primary_fingerprint"]));
+   Assert(!RunRecovery.CanReuse(interrupted,[one,two,three])&&JsonNode.DeepEquals(checkpoint.Array("files")[0],done)&&JsonNode.DeepEquals(checkpoint.Array("files")[2],pending));
+   var resumed=Data.Read(pipeline.RunAsync(settings,new InlineProgress(_=>{}),default).GetAwaiter().GetResult());
+   Assert(handler.Requests==5&&resumed.Array("files").All(r=>r.Text("error")=="")&&JsonNode.DeepEquals(resumed.Array("files")[0],done));
+  });
+  test("Force stop during fingerprints retains the completed model cache for Resume Scout",()=>{
+   var row=Row("force-hash-library/active.mkv",'d',"hash","complete",one);var root=Path.GetDirectoryName(row.Text("path"))!;var output=Path.Combine(temp,"force-hash-output");var catalog=Path.Combine(output,"catalog.json");
+   row["full_dialogue"]=true;row["size"]=row["primary_fingerprint"]!["size"]!.DeepClone();row["source_mtime_ns"]=row["primary_fingerprint"]!["mtime_ns"]!.DeepClone();row["sampled_digest"]=row["primary_fingerprint"]!["sampled_digest"]!.DeepClone();row.Remove("primary_fingerprint");row["error"]="Awaiting verification";
+   Data.Save(catalog,new{episodes=new[]{one}});var reportPath=Path.Combine(output,"report.json");Data.Save(reportPath,Report(row));
+   using var stop=new CancellationTokenSource();int hashCalls=0;var handler=new Handler([Result(Cues("hash"),"complete",one),Result(Cues("hash"),"complete",one)]);using var http=new HttpClient(handler);
+   Task<string> Execute(string exe,IEnumerable<string> args,CancellationToken ct) {
+    Assert(args.Contains("streamhash"));hashCalls++;if(hashCalls==1){stop.Cancel();ct.ThrowIfCancellationRequested();}
+    return Task.FromResult("0,v,SHA256="+new string('d',64)+"\n1,a,SHA256="+new string('f',64));
+   }
+   var pipeline=new MediaPipeline(new DialogueMatcher(http),Execute);var settings=new MatchSettings(root,catalog,output,"model","http://127.0.0.1:1234/v1/chat/completions",SelectedFiles:[row.Text("path")],Restart:true);
+   try{pipeline.RunAsync(settings,new InlineProgress(_=>{}),stop.Token).GetAwaiter().GetResult();throw new Exception("Expected cancellation");}catch(OperationCanceledException){}
+   var interrupted=Data.Read(reportPath).Array("files").Single();Assert(handler.Requests.Count==2&&interrupted!["reasoning"]!=null&&interrupted.Array("candidates").Count==0&&interrupted.Text("status")=="interrupted");
+   var resumed=Data.Read(pipeline.RunAsync(settings,new InlineProgress(_=>{}),default).GetAwaiter().GetResult());
+   Assert(hashCalls==2&&handler.Requests.Count==2&&resumed.Array("files").Single().Text("error")==""&&CollectionResolver.Resolve(resumed).Single().Episode?.Id==one.Id);
+  });
   test("Conflict review checks every claimant against the full guide without choosing a winner by order",()=>{
    var a=Row("claim-a.mkv",'a',"a","complete",one);var b=Row("claim-b.mkv",'b',"b","complete",one);var report=Report(a,b);
    Assert(EvidenceReview.Create(CollectionResolver.Resolve(report)[0]).Sections.Any(s=>s.Heading=="Competing recordings"&&s.Text.Contains("claim-b.mkv")));
@@ -420,14 +487,14 @@ static class MultipartTests {
    Assert(VerificationTests.Evidence(first)==VerificationTests.Evidence(retry)&&JsonNode.DeepEquals(first["response_format"],retry["response_format"]));
    Assert(first["messages"]![1].Text("content").Contains(two.Overview)&&first["messages"]![1].Text("content").Contains(cues.Last().Text));
    var rejected=new Handler([],2);using var rejectedClient=new HttpClient(rejected);
-   try{new DialogueMatcher(rejectedClient).IdentifyAsync(cues,[one,two],"model","http://127.0.0.1:1234/v1/chat/completions").GetAwaiter().GetResult();throw new Exception("Expected context rejection");}catch(ModelContextException){}
+   try{new DialogueMatcher(rejectedClient).DirectAsync(cues,[one,two],"model","http://127.0.0.1:1234/v1/chat/completions",false).GetAwaiter().GetResult();throw new Exception("Expected context rejection");}catch(ModelContextException){}
    Assert(rejected.Requests.Count==2);
   });
   test("Combined matcher verifies both episodes against original dialogue",()=>{
    var cues=Cues("two-stories");var initial=Result(cues,"combined",one,two);initial["summary"]="INITIAL SUMMARY MUST NOT LEAK";
-   var handler=new Handler([initial,Result(cues,"combined",one,two)]);using var client=new HttpClient(handler);
+   var handler=new Handler([initial,Result(cues,"combined",one,two),Result(cues,"combined",one,two)]);using var client=new HttpClient(handler);
    var result=new DialogueMatcher(client).IdentifyAsync(cues,[one,two],"model","http://127.0.0.1:1234/v1/chat/completions").GetAwaiter().GetResult();
-   Assert(result.Array("matches").Count==2&&result.Text("coverage")=="combined"&&handler.Requests.Count==2&&!handler.Requests[1].Contains("INITIAL SUMMARY MUST NOT LEAK"));
+   Assert(result.Array("matches").Count==2&&result.Text("coverage")=="combined"&&handler.Requests.Count==3&&!handler.Requests[1].Contains("INITIAL SUMMARY MUST NOT LEAK")&&!handler.Requests[2].Contains("INITIAL SUMMARY MUST NOT LEAK"));
   });
   test("Split pairs with errors or complete copies cannot bypass conflicts",()=>{
    var a=Row("error-a.mkv",'a',"beginning","partial",one);var b=Row("error-b.mkv",'b',"ending","partial",one);var report=Report(a,b);report["split_assignments"]=new JsonArray(Link(a,b));
@@ -455,6 +522,13 @@ static class MultipartTests {
   protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct) {
    Requests++;
    if(Requests==1){await Task.Delay(Timeout.Infinite,ct);throw new Exception("Unreachable");}
+   return new(HttpStatusCode.OK){Content=new StringContent(new JsonObject{["choices"]=new JsonArray(new JsonObject{["finish_reason"]="stop",["message"]=new JsonObject{["content"]=VerificationTests.WireResponse(JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct))!,replies[Requests-2]).ToJsonString()}})}.ToJsonString())};
+  }
+ }
+ private sealed class CancelOnceHandler(List<JsonObject> replies,Action stop):HttpMessageHandler {
+  public int Requests;
+  protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct) {
+   Requests++;if(Requests==1){stop();await Task.Delay(Timeout.Infinite,ct);throw new Exception("Unreachable");}
    return new(HttpStatusCode.OK){Content=new StringContent(new JsonObject{["choices"]=new JsonArray(new JsonObject{["finish_reason"]="stop",["message"]=new JsonObject{["content"]=VerificationTests.WireResponse(JsonNode.Parse(await request.Content!.ReadAsStringAsync(ct))!,replies[Requests-2]).ToJsonString()}})}.ToJsonString())};
   }
  }

@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 using Scout.Core;
 
 var checks=0;var failures=new List<string>();
-void Test(string name,Action action){try{action();checks++;Console.WriteLine("PASS "+name);}catch(Exception ex){failures.Add(name+": "+ex.Message);Console.WriteLine("FAIL "+name+": "+ex.Message);}}
+void Test(string name,Action action){try{action();checks++;Console.WriteLine("PASS "+name);}catch(Exception ex){failures.Add(name+": "+ex.Message);Console.WriteLine("FAIL "+name+": "+ex);}}
 void Assert(bool value,string message="Assertion failed"){if(!value)throw new Exception(message);}
 void Throws(Action action){try{action();}catch(InvalidDataException){return;}catch(InvalidOperationException){return;}catch(ArgumentException){return;}throw new Exception("Expected rejection.");}
 var temp=Path.Combine(Path.GetTempPath(),"scout-tests-"+Guid.NewGuid());Directory.CreateDirectory(temp);
@@ -272,19 +272,27 @@ Test("Unified server choice keeps loopback local and remote protected",()=>{
  Assert(!System.Text.Json.JsonSerializer.Serialize(legacy,Data.Options).Contains("runtime_executable"));
 });
 VerificationTests.Run(Test);
+GroundingTests.Run(Test);
 MultipartTests.Run(Test,temp);
 MoveTests.Run(Test,temp);
+SeasonPreviewTests.Run(Test,temp);
+ResolutionTests.Run(Test,temp);
 DatabaseTests.Run(Test,temp);
+DoggoTests.Run(Test,temp);
+ContextBatchTests.Run(Test);
 RuntimeTests.Run(Test,temp);
 SettingsTests.Run(Test,temp);
 TimeoutTests.Run(Test);
 ModelOutputQualityTests.Run(Test);
 DiscoveryTests.Run(Test,temp);
+RetrievalTests.Run(Test);
+DescriptionTests.Run(Test,temp);
+SubtitleIntegrationTests.Run(Test,temp);
 if(args.Contains("--metadata-smoke"))DiscoveryTests.PublicSmoke(Test);
 if(args.Length>=3) {
  var reportFile=Path.GetFullPath(args[0]);var root=args[1];var output=args[2];
  Test("57-file imported report parity and media unchanged",()=>{
-    var report=Data.Read(reportFile);var before=report.ToJsonString();var groups=CollectionResolver.Resolve(report);
+    var report=Data.Read(reportFile);report["identification_scope"]=JsonSerializer.SerializeToNode(new IdentificationScope("show"),Data.Options);var before=report.ToJsonString();var groups=CollectionResolver.Resolve(report);
     Assert(groups.Count==55&&groups.Count(g=>g.Episode!=null)==54&&groups.Sum(g=>g.Copies-1)==2&&groups.Count(g=>g.Feature)==1);
     var paths=report.Array("files").Select(n=>n.Text("path")).ToList();
     var snapshot=paths.ToDictionary(p=>p,p=>(new FileInfo(p).Length,PreviewPlanner.MtimeNs(p)));

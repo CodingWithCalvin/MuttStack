@@ -7,6 +7,7 @@ public static class MultipartEvidence {
  public static string DialogueHash(JsonObject row)=>CollectionResolver.Hash(JsonSerializer.Serialize(Cues(row),Data.Options));
  public static bool Combined(JsonObject row) {
   try {
+   if(Subtitles.SubtitleResult.IsSubtitle(row))return row.Array("candidates").Count==2&&Subtitles.SubtitleResult.Valid(row);
    if(row["reasoning"].Text("dialogue_hash")!=DialogueHash(row)||row["reasoning"].Text("method")!=DialogueMatcher.Version||row["reasoning"].Text("coverage")!="combined")return false;
    var candidates=row.Array("candidates");if(candidates.Count!=2)return false;
    var episodes=candidates.Select(c=>Data.Episode(c!["episode"]!)).ToList();

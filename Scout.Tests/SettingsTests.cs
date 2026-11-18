@@ -59,6 +59,25 @@ static class SettingsTests
    Check(!Encoding.UTF8.GetString(File.ReadAllBytes(Path.Combine(dir,"credentials.dpapi"))).Contains("fake-secret"));
    store.SetKey("compatible|b","different");store.SetKey("openai|a",null);Check(store.ReadKey("openai|a")==null&&store.ReadKey("compatible|b")=="different");
   });
+  test("SubDL credentials are protected, independently removable and readable without database writes",()=>{
+   foreach(bool doggo in new[]{false,true}) {
+    var folder=Path.Combine(root,"subdl-"+doggo);var database=new ScoutDatabase(Path.Combine(folder,"scout.db"),doggo);var settings=Path.Combine(folder,"settings");
+    ScoutStorage.Register(settings,database);
+    try {
+     var store=new SettingsStore(settings);store.SetKey("metadata|tvdb","other-key");
+     SubtitleCredentials.SaveSubdl(store,"  fake-subdl-secret  ");SubtitleCredentials.SaveSubdl(store," ");
+     var path=Path.Combine(settings,"credentials.dpapi");var before=database.Read(path);
+     Check(!Encoding.UTF8.GetString(before).Contains("fake-subdl-secret"));
+     Check(SubtitleCredentials.ReadSubdl(database.Path,settings)=="fake-subdl-secret"&&before.SequenceEqual(database.Read(path)));
+     Check(SubtitleCredentials.ReadMetadata(database.Path,settings,"tvdb")=="other-key"&&before.SequenceEqual(database.Read(path)));
+     Reject(()=>SubtitleCredentials.ReadMetadata(database.Path,settings,"arbitrary-provider"));
+     Reject(()=>SubtitleCredentials.SaveSubdl(store,"invalid\nheader"));
+     Check(store.ReadKey(SubtitleCredentials.Subdl)=="fake-subdl-secret");
+     store.SetKey(SubtitleCredentials.Subdl,null);
+     Check(SubtitleCredentials.ReadSubdl(database.Path,settings)==null&&store.ReadKey("metadata|tvdb")=="other-key");
+    }finally{ScoutStorage.Unregister(settings);}
+   }
+  });
   test("Invalid resource limits rejected",()=>{Reject(()=>new AppSettings{CpuThreads=0}.Validate());Reject(()=>new AppSettings{MaxRequestsPerRun=1}.Validate());Reject(()=>new AppSettings{AutoDownloadMissing=true}.Validate());});
   test("Cloud requires explicit opt-in and credentials",()=>{
    Reject(()=>ConnectionPolicy.Validate("openai","https://api.openai.com/v1/responses",false,"fake"));
