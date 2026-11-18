@@ -89,3 +89,9 @@ Scripts run from the repository root. The executable is published to `artifacts\
 Tests use temporary state and a fake process; they do not access a physical disc or live app data. Coverage includes ripping success, cancellation, partial failure, collision-safe publication, history recovery, legacy queue preservation, inbox delivery/retry, and acknowledgement while Ripley is closed. Cross-app checks exercise Tucker acceptance and completion reconciliation. Legacy core compatibility tests remain for older saved records and metadata.
 
 Source is under `src\Ripley`; tests and fake tools are under `tests`. The mascot source artwork and Windows icons are in `src\Ripley\Assets`.
+
+## Scout shared storage compatibility
+
+Ripley's TVDB lookup follows Scout's persistent `storage.json` selection through the shared Doggo credential adapter. It supports legacy standalone storage before a switch, and reads the selected protected credential document from Doggo afterward. Rotated keys and PINs take effect on the next lookup; removed keys and unavailable shared storage do not fall back to stale copies. Keys remain protected in Scout and are never copied into Ripley settings or logs.
+
+Updated Ripley holds a shared lease on Doggo storage while open. The sibling Scout cutover tool requires all Doggo apps to be closed before a live switch. These compatibility changes were tested with isolated databases and synthetic protected credentials; they do not install apps or migrate live data.

@@ -12,4 +12,4 @@
     <Compile Include="../../src/Ripley/Tvdb.cs" Link="Tvdb.cs"/>
     <Compile Include="../../src/Ripley/FolderNames.cs" Link="FolderNames.cs"/>
   <Compile Include="../../src/Ripley/DiscLabelHints.cs" Link="DiscLabelHints.cs"/></ItemGroup>
-</Project>
+<ItemGroup><ProjectReference Include="../../../Tucker/src/Doggo.Handoffs/Doggo.Handoffs.csproj"/></ItemGroup></Project>

@@ -6,6 +6,7 @@ using Ripley;
 var root=Path.Combine(Path.GetTempPath(),"DoggoHandoffTests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);int passed=0;
 void Check(bool yes,string label){if(!yes)throw new Exception(label);Console.WriteLine("PASS "+label);passed++;}
 try {
+ passed+=CredentialTests.Run(root);
  var raw=Path.Combine(root,"raw.mkv");File.WriteAllText(raw,"raw content");var stat=new FileInfo(raw);var id=Guid.NewGuid().ToString("N");
  var metadata=Path.Combine(root,"ripley-disc.json");QueueStore.Write(metadata,new{status="Ripped",disc_label="Show S2 V3 D4",season="2",volume_number="3",disc_number="4",rip_date=DateTime.UtcNow,series_identity=new SeriesIdentity("tvdb","42","Show","2026","")});
  var run=JsonSerializer.SerializeToNode(new {Id=id,Status="Completed",Created=DateTime.Now,Season="99",Volume="99",DiscNumber="99",DiscLabel="WRONG",Files=new[]{new Job{Source=raw,SourceSize=stat.Length,SourceModified=stat.LastWriteTimeUtc,DiscMetadata=metadata}}})!.AsObject();
