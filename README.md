@@ -38,13 +38,13 @@ Production database: `%LOCALAPPDATA%\Doggo\doggo.db`. Tucker creates only `doggo
 
 For isolated testing: `Tucker.exe --state C:\some\test-directory`. This places both database and scratch settings under that directory. It never starts processing on restoration.
 
-## Inbox and future integration
+## Inbox and Scout handoffs
 
 Import a version-1 JSON handoff through **Inbox → Import handoff**. It stays Offered while staged and previewed in New Tucker. All selected batches are acknowledged only when their combined run is saved; run creation and every acceptance commit in the same SQLite transaction. Export an acceptance receipt when needed. See [the handoff contract](docs/handoffs.md) and [database design](docs/database.md).
 
 The Inbox sidebar badge counts batches awaiting review, refreshes every five seconds from any screen, and appears on startup for handoffs received while Tucker was closed. Accepting or declining updates it immediately. It disappears when nothing is waiting; accepted and declined batches remain in inbox history.
 
-**Ripley sending is connected.** Use Send to Tucker on a newly completed Ripley run; it appears in Tucker’s inbox. Existing completed compression is reconciled through a Ripley-owned completion ledger and skipped during Tucker import. Scout receiving and its database migration remain deferred. Tucker retains compatible `.ripley.json` output sidecars for downstream metadata.
+**Ripley sending is connected.** Use Send to Tucker on a newly completed Ripley run; it appears in Tucker’s inbox. Existing completed compression is reconciled through a Ripley-owned completion ledger and skipped during Tucker import. Tucker → Scout receiving is implemented for isolated testing: select a saved run and choose **Send to Scout** to offer its newly completed outputs. Scout accepts them into waiting drafts, and Tucker picks up the durable response on startup or refresh. The live Scout storage switch and app installation remain deferred. See [the Scout handoff workflow](docs/scout-handoffs.md). Tucker retains compatible `.ripley.json` output sidecars for downstream metadata.
 
 ## Development and verification
 

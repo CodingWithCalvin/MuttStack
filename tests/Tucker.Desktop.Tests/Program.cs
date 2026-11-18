@@ -85,6 +85,7 @@ class Program
     passed+=await AppendDesktopTests.Run(root,Path.GetFullPath(args[0]),args.Length>2?args[2]:null);
     passed+=await HistoryDesktopTests.Run(root,Path.GetFullPath(args[0]),args.Length>2?args[2]:null);
     passed+=await FolderPreviewDesktopTests.Run(root,Path.GetFullPath(args[0]),args.Length>2?args[2]:null);
+    passed+=await ScoutDesktopTests.Run(root,args.Length>2?args[2]:null);
     Console.WriteLine($"{passed} desktop checks passed");app.Shutdown(0);Dispatcher.CurrentDispatcher.InvokeShutdown();
    }catch(Exception ex){Console.Error.WriteLine(ex);if(w?.Manager.Running==true){w.Manager.Stop();await w.Manager.RunTask!;}w?.Close();Environment.ExitCode=1;app.Shutdown(1);Dispatcher.CurrentDispatcher.InvokeShutdown();}
    finally{Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);}

@@ -42,6 +42,7 @@ public partial class MainWindow : Window
         Manager.Changed+=Refresh;
         Manager.Line+=line=>Dispatcher.Invoke(()=>{Append(line);var m=Regex.Match(line,@"(\d+(?:\.\d+)?)\s*%");if(m.Success&&double.TryParse(m.Groups[1].Value,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var n))Progress.Value=n;UpdateProgress();Speed.Text=line.Contains("fps")||line.Contains("ETA")?line:Speed.Text;});
         StoragePath.Text=databasePath;Refresh();OpenRun(QueueList.Items.Cast<QueueTile>().FirstOrDefault()?.Id);RefreshInboxStatus();
+        InitializeScoutOutbox();
         Status.Text="Ready. Saved Tucker runs never start automatically.";
         Closing+=(_,e)=>{if(Manager.Running||busy){e.Cancel=true;MessageBox.Show(this,"Pause after the current file or stop the encode before closing Tucker.","Tucker is working");}else inboxTimer.Stop();};
         inboxTimer.Tick+=(_,_)=>RefreshInboxStatus();inboxTimer.Start();
@@ -78,7 +79,7 @@ public partial class MainWindow : Window
         var all=ActiveJobs();
         OverallSummary.Text=all.Count==0?"No active runs":$"{all.Count(j=>j.Status=="Completed")} / {all.Count} files complete · {all.Count(CanRun)} waiting"+(all.Any(j=>j.Status=="Needs review")?" · needs review":"");
         if(Manager.PausePending)OverallSummary.Text+=" · pausing after this file";
-        UpdateProgress();RefreshNavigation();RefreshHistoryControls();if(page=="Settings")RefreshFolderExamples();
+        UpdateProgress();RefreshNavigation();RefreshHistoryControls();RefreshScoutDelivery();if(page=="Settings")RefreshFolderExamples();
     }
     static bool CanRun(Job j)=>j.Status is "Waiting" or "Paused" or "Failed";
     static string RunSummary(List<Job> jobs){if(jobs.Count==0)return "No run selected";var status=jobs.Any(j=>j.Status is "Encoding" or "Publishing")?"Running":jobs.Any(j=>j.Status=="Needs review")?"Needs review":jobs.Any(j=>j.Status=="Failed")?"Failed":jobs.Any(j=>j.Status=="Paused")?"Paused":jobs.Any(j=>j.Status!="Completed")?"Waiting":"Completed";return $"{status} · {jobs.Count(j=>j.Status=="Completed")} / {jobs.Count} files complete";}
@@ -133,7 +134,7 @@ public partial class MainWindow : Window
     void Pause(object s,RoutedEventArgs e)=>Manager.TogglePause();
     void Stop(object s,RoutedEventArgs e){if(MessageBox.Show(this,"Stop interrupts the current encode. Its incomplete output is discarded and this file must start again later. Raw sources and completed output are kept.","Stop encoding now?",MessageBoxButton.YesNo,MessageBoxImage.Warning)==MessageBoxResult.Yes)Manager.Stop();}
     void UpdateInboxBadge(int count){InboxCount.Text=count>99?"99+":count.ToString();InboxBadge.Visibility=count>0?Visibility.Visible:Visibility.Collapsed;var label=count==0?"Inbox":$"Inbox · {count} {(count==1?"batch":"batches")} awaiting review";NavInbox.ToolTip=label;System.Windows.Automation.AutomationProperties.SetName(NavInbox,label);}
-    void RefreshInboxStatus(){if(page=="Inbox"){RefreshInbox();return;}try{UpdateInboxBadge(Manager.Database.PendingInboxCount());}catch(Exception ex){Error(ex);}}
+    void RefreshInboxStatus(){RefreshScoutDelivery(true);if(page=="Inbox"){RefreshInbox();return;}try{UpdateInboxBadge(Manager.Database.PendingInboxCount());}catch(Exception ex){Error(ex);}}
     void RefreshInbox(){try{var selected=InboxGrid.SelectedItems.Cast<InboxItem>().Select(i=>i.Id).ToHashSet();var rows=Manager.Database.Inbox();InboxGrid.ItemsSource=rows;foreach(var row in rows.Where(r=>selected.Contains(r.Id)))InboxGrid.SelectedItems.Add(row);var pending=rows.Count(r=>r.Status=="Offered");UpdateInboxBadge(pending);InboxSummary.Text=$"{pending} awaiting review · {rows.Count(r=>r.Status=="Accepted")} accepted · {stagedBatches.Count} staged for {(appendRunId==null?"New Tucker":appendRunName)}";}catch(Exception ex){Error(ex);}}
     void ImportManifest(object s,RoutedEventArgs e){var d=new OpenFileDialog{Filter="Doggo handoff JSON|*.json"};if(d.ShowDialog(this)!=true)return;try{Manager.Database.Offer(Handoff.Read(d.FileName));RefreshInbox();Status.Text="Handoff saved to the inbox. Review it before accepting.";}catch(Exception ex){Error(ex);}}
     void ReviewHandoff(object s,RoutedEventArgs e){if(busy)return;var selected=InboxGrid.SelectedItems.Cast<InboxItem>().Where(i=>i.Status=="Offered").ToArray();if(selected.Length==0){Status.Text="Select one or more waiting inbox batches.";return;}foreach(var item in selected)if(stagedBatches.All(h=>h.Manifest.Id!=item.Id))stagedBatches.Add(new(JsonSerializer.Deserialize<HandoffManifest>(item.Payload)!,item.Digest));ShowPage("New");Status.Text=$"{stagedBatches.Count} inbox batches in this Tucker. Add more folders or batches, then preview together.";}
