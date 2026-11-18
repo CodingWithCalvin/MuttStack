@@ -10,7 +10,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shell;
 using System.Windows.Threading;
 
-class Program
+partial class Program
 {
     static int passed;
     static void Check(bool condition, string name) { if(!condition) throw new Exception(name); Console.WriteLine("PASS " + name); passed++; }
@@ -27,7 +27,10 @@ class Program
         Directory.CreateDirectory(temp);
         try {
             var app = new App(); app.InitializeComponent();
-            var window = new MainWindow(Path.Combine(temp, "state"));
+            var state=Path.Combine(temp,"state");Directory.CreateDirectory(state);
+            File.WriteAllText(Path.Combine(state,"settings.json"), """{"Cli":"legacy-handbrake.exe","CompressionPrefix":"OLD_"}""");
+            File.WriteAllText(Path.Combine(state,"queue.json"), "[ ]");
+            var window = new MainWindow(state);
             var task = window.Dispatcher.InvokeAsync(() => Run(window, temp, Path.GetFullPath(args[0]), args.Length > 1 ? args[1] : null)).Task.Unwrap();
             var frame = new DispatcherFrame();
             _ = task.ContinueWith(_ => window.Dispatcher.BeginInvoke(() => frame.Continue = false));
@@ -42,50 +45,41 @@ class Program
     {
         await CheckDriveNotifications(temp);
         Check(window.Title=="Ripley"&&window.WindowStyle==WindowStyle.None&&WindowChrome.GetWindowChrome(window).CaptionHeight==38,"Ripley keeps Scout's custom shell");
-        foreach(var page in new[]{"Rip","Compress","Settings"}) {
+        foreach(var page in new[]{"Rip","Settings"}) {
             Call(window,"ShowPage",page);
-            Check(Control<FrameworkElement>(window,page+"Page").Visibility==Visibility.Visible&&new[]{"Rip","Compress","Settings"}.Where(p=>p!=page).All(p=>Control<FrameworkElement>(window,p+"Page").Visibility==Visibility.Collapsed),"Navigation selects only "+page);
+            Check(Control<FrameworkElement>(window,page+"Page").Visibility==Visibility.Visible&&Control<FrameworkElement>(window,(page=="Rip"?"Settings":"Rip")+"Page").Visibility==Visibility.Collapsed,"Navigation selects only "+page);
         }
+        Check(new[]{"SideCompress","CompressPage","QueueRipButton","Cli","PresetFile","Hardware","Destination","ResumeButton","StopAllButton"}.All(n=>window.FindName(n)==null),"Ripley has no compression navigation, queue, preset, output or processing controls");
         Text(window,"DiscLabel").Text="ICARLY_S1_V2_D2";
         Check(Text(window,"Season").Text=="1"&&Text(window,"Volume").Text=="2"&&Text(window,"DiscNumber").Text=="2","Disc label still fills season, volume and disc");
         Text(window,"DiscLabel").Text="UNKNOWN";
         Check(Text(window,"Season").Text==""&&Text(window,"Volume").Text==""&&Text(window,"DiscNumber").Text=="","A new unknown disc clears stale values");
-        var preset=Path.Combine(temp,"preset.json");File.WriteAllText(preset,"""{"PresetList":[{"PresetName":"Custom test","FileFormat":"av_mkv","VideoEncoder":"x265_10bit","Type":1}]}""");
-        Configure(window,temp,fake,preset);
-        CheckHistory(window,temp);
-        await CheckRip(window,temp,fake);
-        await CheckLockedHistory(temp,fake,preset);
-        await CheckQueues(window,temp,fake);
-        await CheckStopAndPause(window,temp,fake);
+        Configure(window,temp,fake);CheckHistory(window,temp);
+        await CheckRip(window,temp);
+        await CheckLockedHistory(temp);
+        await CheckTuckerInbox(temp,fake,renders);
+        await CheckHistoryActions(temp,renders);
+        await CheckCancellation(window,temp);
         Call(window,"SavePreferences",window,new RoutedEventArgs());
         var saved=System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(temp,"state","settings.json")))!;
-        Check(saved["FilenamePrefix"]!.ToString()=="{volume_number}_{disc_number}_"&&saved["CompressionPrefix"]!.ToString()=="EXTERNAL_","Raw and compression prefixes save independently");
+        Check(saved["FilenamePrefix"]!.ToString()=="{volume_number}_{disc_number}_"&&saved["Cli"]!.ToString()=="legacy-handbrake.exe"&&saved["CompressionPrefix"]!.ToString()=="OLD_","Saving ripping preferences preserves dormant legacy data without applying it");
+        Check(File.ReadAllText(Path.Combine(temp,"state","queue.json"))=="[ ]","Rip, cancel, handoff and settings do not rewrite the legacy queue");
         var restored=new MainWindow(Path.Combine(temp,"state"));
-        Check(Jobs(restored).Count==Jobs(window).Count&&!((bool)Field(restored,"encoding")!),"Restoring multiple queues never starts processing");
         var history=(ObservableCollection<RipSession>)Field(restored,"ripHistory")!;
         var completed=history.First(h=>h.Status=="Completed"&&!h.IsLocked);Control<ListBox>(restored,"HistoryList").SelectedItem=completed;
-        Check(((List<Job>)Field(restored,"lastRipFiles")!).Select(j=>j.Source).SequenceEqual(completed.Files.Select(j=>j.Source))&&!Control<Button>(restored,"RipButton").IsEnabled&&Control<Button>(restored,"QueueRipButton").Visibility==Visibility.Visible,"Completed history restores exact raw files for queueing without reripping");
-        completed.Status="Ripping";Call(restored,"SaveHistory");
-        var recovered=new MainWindow(Path.Combine(temp,"state"));
-        Check(((ObservableCollection<RipSession>)Field(recovered,"ripHistory")!).Single(h=>h.Id==completed.Id).Status=="Interrupted"&&!(bool)Field(recovered,"discBusy")!,"Interrupted history is recovered without restarting a physical disc operation");
+        Check(((List<Job>)Field(restored,"lastRipFiles")!).Select(j=>j.Source).SequenceEqual(completed.Files.Select(j=>j.Source))&&!Control<Button>(restored,"RipButton").IsEnabled&&Control<Button>(restored,"SendTuckerButton").IsEnabled,"Completed history restores exact raw files for sending without reripping");
         if(renders!=null) {
             Directory.CreateDirectory(renders);
-            var selection=Control<ListBox>(window,"HistoryList").SelectedItem;
-            Control<ListBox>(window,"HistoryList").SelectedItem=((ObservableCollection<RipSession>)Field(window,"ripHistory")!).First(s=>s.IsLocked);
-            await Render(window,1440,920,Path.Combine(renders,"rip-locked.png"));
-            Control<ListBox>(window,"HistoryList").SelectedItem=selection;
-            Call(window,"ShowCompressionQueue");await Render(window,1440,920,Path.Combine(renders,"compress.png"));await Render(window,1080,740,Path.Combine(renders,"compress-minimum.png"));
-            Call(window,"ShowSources",window,new RoutedEventArgs());await Render(window,1440,920,Path.Combine(renders,"compress-sources.png"));
-            Call(window,"ShowCompressionSettings",window,new RoutedEventArgs());await Render(window,1440,920,Path.Combine(renders,"compress-output.png"));await Render(window,1080,740,Path.Combine(renders,"compress-options.png"));
-            Call(window,"ShowPage","Rip");await Render(window,1440,920,Path.Combine(renders,"rip.png"));await Render(window,1080,740,Path.Combine(renders,"rip-minimum.png"));
-            Control<ScrollViewer>(window,"RipSetupScroll").ScrollToBottom();await Render(window,1080,740,Path.Combine(renders,"rip-folders.png"));
-            Call(window,"NewRipley",window,new RoutedEventArgs());await Render(window,1440,920,Path.Combine(renders,"rip-new.png"));
+            await Render(restored,1440,920,Path.Combine(renders,"rip.png"));await Render(restored,1080,740,Path.Combine(renders,"rip-minimum.png"));
+            Control<ScrollViewer>(restored,"RipSetupScroll").ScrollToBottom();await Render(restored,1080,740,Path.Combine(renders,"rip-folders.png"));
+            Call(restored,"ShowPage","Settings");await Render(restored,1080,740,Path.Combine(renders,"settings-minimum.png"));
         }
-        await CheckClear(window,temp,fake);
+        completed.Status="Ripping";Call(restored,"SaveHistory");restored.Close();
+        var recovered=new MainWindow(Path.Combine(temp,"state"));
+        Check(((ObservableCollection<RipSession>)Field(recovered,"ripHistory")!).Single(h=>h.Id==completed.Id).Status=="Interrupted"&&!(bool)Field(recovered,"discBusy")!,"Interrupted history is recovered without restarting a physical disc operation");
+        recovered.Close();window.Close();
     }
     static TextBox Text(MainWindow w,string name)=>Control<TextBox>(w,name);
-    static ObservableCollection<Job> Jobs(MainWindow w)=>(ObservableCollection<Job>)Field(w,"jobs")!;
-    static ObservableCollection<string> Folders(MainWindow w)=>(ObservableCollection<string>)Field(w,"folders")!;
     static async Task CheckDriveNotifications(string temp)
     {
         var drives=new List<OpticalDrive>{new(0,"DVD","ICARLY_S1_V2_D2","E:"),new(1,"DVD","","F:")};
@@ -106,7 +100,7 @@ class Program
         NotifyDrive(w,0x8004,1u<<4);drives[0]=drives[0] with {Label=""};await (Task)Call(w,"RefreshDriveList")!;
         Check(Control<ComboBox>(w,"DriveChoice").Items.Count==2&&Text(w,"DiscLabel").Text==""&&Text(w,"Season").Text==""&&Field(w,"inspected")==null,"Media removal retains the physical drive and clears stale draft metadata");
         NotifyDrive(w,0x8000,1u<<4);drives[0]=drives[0] with {Label="ICARLY_S2_V1_D1"};await (Task)Call(w,"RefreshDriveList")!;
-        Check(Text(w,"Season").Text=="2"&&Text(w,"DiscNumber").Text=="1"&&!((bool)Field(w,"discBusy")!)&&Jobs(w).Count==0,"Insertion updates detected season and disc without starting ripping or compression");
+        Check(Text(w,"Season").Text=="2"&&Text(w,"DiscNumber").Text=="1"&&!((bool)Field(w,"discBusy")!),"Insertion updates detected season and disc without starting ripping or compression");
         Call(w,"SetDiscBusy",true);var before=reads;
         NotifyDrive(w,0x8000,1u<<4);await (Task)Call(w,"RefreshDriveList")!;
         Check(reads==before&&(bool)Field(w,"driveRefreshPending")!&&Text(w,"Season").Text=="2","A media event during an active disc operation waits without scanning or changing its settings");
@@ -155,80 +149,66 @@ class Program
         Call(w,"SavePreferences",w,new RoutedEventArgs());var restored=new MainWindow(Path.Combine(temp,"state"));
         Check(((ObservableCollection<RipSession>)Field(restored,"ripHistory")!).Count==2&&((RipSession)Field(restored,"currentRipSession")!).Id==second.Id&&Text(restored,"Season").Text=="2","History and its selected draft survive reopening");
         Control<ListBox>(w,"HistoryList").SelectedItem=first;Text(w,"DiscNumber").Text="2";
-        Call(w,"ShowCompressionQueue");Call(w,"OpenRipHistory",new Button{DataContext=first},new RoutedEventArgs());
-        Check(Control<FrameworkElement>(w,"RipPage").Visibility==Visibility.Visible&&history.Count==2,"Reopening the selected history item returns from compression without creating a new session");
-        Check(w.FindName("NavRip")==null&&w.FindName("NavCompress")==null&&Control<Button>(w,"SideCompress").Visibility==Visibility.Visible,"Sidebar navigation replaces the Rip and Compress header tabs");
+        Call(w,"ShowPage","Settings");Call(w,"OpenRipHistory",new Button{DataContext=first},new RoutedEventArgs());
+        Check(Control<FrameworkElement>(w,"RipPage").Visibility==Visibility.Visible&&history.Count==2,"Reopening the selected history item returns from settings without creating a new session");
+        Check(w.FindName("NavRip")==null&&w.FindName("NavCompress")==null&&w.FindName("SideCompress")==null,"History and Settings remain the only sidebar destinations");
     }
-    static void Configure(MainWindow w,string temp,string fake,string preset)
+    static void Configure(MainWindow w,string temp,string fake)
     {
         Text(w,"RawFolder").Text=Path.Combine(temp,"raw");Text(w,"RawTemplate").Text=@"{series}\Season {season:00}";
-        Text(w,"Destination").Text=Path.Combine(temp,"compressed");Text(w,"OutputTemplate").Text=@"{series}\Season {season:00}";
-        Text(w,"FilenamePrefix").Text="{volume_number}_{disc_number}_";Text(w,"CompressionPrefix").Text="EXTERNAL_";
-        Text(w,"MakeMkv").Text=fake;Text(w,"Cli").Text=fake;Text(w,"PresetFile").Text=preset;Control<ComboBox>(w,"Hardware").SelectedIndex=1;Call(w,"ReloadPresets",(object?)null);
+        Text(w,"FilenamePrefix").Text="{volume_number}_{disc_number}_";Text(w,"MakeMkv").Text=fake;
         Set(w,"series",new SeriesIdentity("tvdb","82493","iCarly","2007",""));Call(w,"DisplaySeries");
-        Set(w,"compressionSeries",new SeriesIdentity("tvdb","999","Different fallback","1999",""));Call(w,"DisplayCompressionSeries");
         var drive=Control<ComboBox>(w,"DriveChoice");drive.ItemsSource=new[]{new OpticalDrive(0,"DVD","ICARLY_S1_V2_D2","E:")};drive.SelectedIndex=0;drive.ApplyTemplate();
         Check(drive.Template.FindName("PART_Popup",drive)!=null,"Drive dropdown keeps its dark popup");
     }
-    static async Task CheckRip(MainWindow w,string temp,string fake)
+    static async Task CheckRip(MainWindow w,string temp)
     {
-        var preset=Control<ComboBox>(w,"PresetChoice").SelectedItem;
-        Control<ComboBox>(w,"PresetChoice").SelectedItem=null;Text(w,"Cli").Text=Path.Combine(temp,"missing.exe");var output=Text(w,"Destination").Text;Text(w,"Destination").Text="";
         await (Task)Call(w,"RipDiscCore")!;
         var ripped=(List<Job>)Field(w,"lastRipFiles")!;
-        Check(ripped.Count==1&&File.Exists(ripped[0].Source)&&Jobs(w).Count==0,"Rip saves raw files without HandBrake or compression setup and never queues them automatically");
-        Check(Control<Button>(w,"QueueRipButton").Visibility==Visibility.Visible&&Control<Button>(w,"QueueRipButton").Content.ToString()=="Add to queue","Completed rips offer an explicit Add to queue action");
+        Check(ripped.Count==1&&File.Exists(ripped[0].Source),"Rip saves raw files without HandBrake or compression configuration");
+        Check(Control<Button>(w,"SendTuckerButton").Visibility==Visibility.Visible&&Control<Button>(w,"SendTuckerButton").IsEnabled,"Completed rips offer Send to Tucker");
+        using(var sql=new Doggo.Sqlite(Path.Combine(temp,"state","doggo.db")))Check(sql.Query("SELECT id FROM handoff_batches").Count==0,"Ripping never sends a batch before the user chooses Send to Tucker");
         var first=ripped[0].Source;
         await (Task)Call(w,"RipDiscCore")!;
         Check(File.Exists(first)&&((List<Job>)Field(w,"lastRipFiles")!)[0].Source!=first,"Repeated raw filenames remain collision safe");
-        bool failed=false;try{await (Task)Call(w,"AddCompletedRip")!;}catch(IOException){failed=true;}
-        Check(failed&&!((RipSession)Field(w,"currentRipSession")!).IsLocked&&Jobs(w).Count==0&&Control<Button>(w,"QueueRipButton").IsEnabled,"A failed queue addition leaves the completed run available to retry");
-        Control<ComboBox>(w,"PresetChoice").SelectedItem=preset;Text(w,"Cli").Text=fake;Text(w,"Destination").Text=output;
-        await (Task)Call(w,"AddCompletedRip")!;
-        Check(Jobs(w).Count==1&&Jobs(w)[0].Status=="Waiting"&&!Directory.Exists(output)&&Control<Grid>(w,"CompressPage").Visibility==Visibility.Visible,"Adding a completed rip queues only that disc's files and leaves idle compression stopped");
-        await (Task)Call(w,"AddCompletedRip")!;Check(Jobs(w).Count==1,"Adding the same completed rip twice does not duplicate jobs");
-        var locked=(RipSession)Field(w,"currentRipSession")!;
-        Check(locked.IsLocked&&locked.Subtitle.Contains("Queued · locked")&&!Control<Button>(w,"QueueRipButton").IsEnabled&&Control<Button>(w,"QueueRipButton").Content.ToString()=="Added to queue","Successfully queueing a run locks it and clearly labels the history and add button");
         var progress=(RipQueue)Field(w,"ripQueue")!;Check(progress.Files.Single().Status=="Saved","Ripping queue retains confirmed filenames and completion");
         Call(w,"NewRipley",w,new RoutedEventArgs());Text(w,"DiscLabel").Text="ICARLY_S1_V2_D2";
         Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","partial");await (Task)Call(w,"RipDiscCore")!;Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);
-        Check(((List<Job>)Field(w,"lastRipFiles")!).Count==0&&Jobs(w).Count==1&&Directory.GetFiles(Text(w,"RawFolder").Text,"title_t00.mkv",SearchOption.AllDirectories).Length==1,"An incomplete rip keeps raw data and offers no completed-rip queue action");
+        Check(((List<Job>)Field(w,"lastRipFiles")!).Count==0&&Directory.GetFiles(Text(w,"RawFolder").Text,"title_t00.mkv",SearchOption.AllDirectories).Length==1&&!Control<Button>(w,"SendTuckerButton").IsEnabled,"An incomplete rip keeps raw data and cannot be handed off");
     }
-    static async Task CheckLockedHistory(string temp,string fake,string preset)
+    static async Task CheckLockedHistory(string temp)
     {
-        var state=Path.Combine(temp,"locked-state");Directory.CreateDirectory(state);
-        foreach(var name in new[]{"settings.json","history.json","queue.json"})File.Copy(Path.Combine(temp,"state",name),Path.Combine(state,name));
-        var w=new MainWindow(state);var history=(ObservableCollection<RipSession>)Field(w,"ripHistory")!;
-        var locked=history.Single(s=>s.IsLocked);Control<ListBox>(w,"HistoryList").SelectedItem=locked;
-        Check(!Control<StackPanel>(w,"RipSetup").IsEnabled&&!Control<Button>(w,"InspectButton").IsEnabled&&!Control<Button>(w,"RipButton").IsEnabled&&!Control<Button>(w,"QueueRipButton").IsEnabled&&Control<TextBlock>(w,"PageSubtitle").Text.Contains("Run locked"),"Reopening a queued run preserves its lock and review-only UI");
-        var label=locked.DiscLabel;Text(w,"DiscLabel").Text="Changed unexpectedly";Call(w,"SaveHistory");
-        w=new MainWindow(state);history=(ObservableCollection<RipSession>)Field(w,"ripHistory")!;locked=history.Single(s=>s.IsLocked);
-        Check(locked.DiscLabel==label&&Text(w,"DiscLabel").Text==label,"Locked run metadata cannot be overwritten by later form changes");
-        await (Task)Call(w,"ClearQueueEntries")!;
-        w=new MainWindow(state);history=(ObservableCollection<RipSession>)Field(w,"ripHistory")!;var count=history.Count;
-        Text(w,"Destination").Text=Path.Combine(temp,"different-output");await (Task)Call(w,"AddCompletedRip")!;await (Task)Call(w,"RipDiscCore")!;
-        Call(w,"InspectDisc",w,new RoutedEventArgs());
-        Check(Jobs(w).Count==0&&history.Count==count&&((RipSession)Field(w,"currentRipSession")!).IsLocked&&!(bool)Field(w,"discBusy")!,"Clearing queues and restarting cannot unlock, requeue, rerip, or reinspect a locked run");
+        var state=Path.Combine(temp,"legacy-lock-state");Directory.CreateDirectory(state);
+        var files=MakeDisc(Path.Combine(temp,"legacy-raw"),"LEGACY_S1_D1","iCarly","82493","1",1);
+        var run=new RipSession{Status="Completed",DiscLabel="LEGACY_S1_D1",Files=files};
+        QueueStore.Write(Path.Combine(state,"history.json"),new{Selected=run.Id,Sessions=new[]{run}});
+        QueueStore.Write(Path.Combine(state,"queue.json"),files);var original=File.ReadAllBytes(Path.Combine(state,"queue.json"));
+        var w=new MainWindow(state);var history=(ObservableCollection<RipSession>)Field(w,"ripHistory")!;var locked=history.Single();
+        Check(locked.IsLocked&&!Control<StackPanel>(w,"RipSetup").IsEnabled&&!Control<Button>(w,"InspectButton").IsEnabled&&!Control<Button>(w,"RipButton").IsEnabled&&!Control<Button>(w,"SendTuckerButton").IsEnabled,"Legacy queued runs retain their lock and cannot be resent");
+        Text(w,"DiscLabel").Text="Changed unexpectedly";Call(w,"SaveHistory");w.Close();
+        w=new MainWindow(state);history=(ObservableCollection<RipSession>)Field(w,"ripHistory")!;locked=history.Single();
+        Check(locked.DiscLabel=="LEGACY_S1_D1"&&Text(w,"DiscLabel").Text==locked.DiscLabel,"Locked run metadata cannot be overwritten by later form changes");
+        await (Task)Call(w,"RipDiscCore")!;Call(w,"InspectDisc",w,new RoutedEventArgs());Call(w,"SendToTucker",w,new RoutedEventArgs());
+        Check(!(bool)Field(w,"discBusy")!&&locked.HandoffId==""&&original.SequenceEqual(File.ReadAllBytes(Path.Combine(state,"queue.json"))),"Legacy queue remains byte-for-byte intact and never processes or transfers on upgrade");
+        locked.CompressionOutcome="Completed";locked.ReconciledAtUtc=DateTime.UtcNow;locked.Files[0].CompletedOutput="existing-output.mkv";Call(w,"SaveHistory");w.Close();
+        w=new MainWindow(state);locked=((ObservableCollection<RipSession>)Field(w,"ripHistory")!).Single();
+        Check(locked.CompressionOutcome=="Completed"&&locked.Files[0].CompletedOutput=="existing-output.mkv"&&Control<Button>(w,"SendTuckerButton").Content.ToString()=="Compression completed"&&!Control<Button>(w,"SendTuckerButton").IsEnabled,"Reconciled completion evidence remains visible and cannot be requeued");
         Call(w,"NewRipley",w,new RoutedEventArgs());
-        Check(history.Count==count+1&&!((RipSession)Field(w,"currentRipSession")!).IsLocked&&Control<StackPanel>(w,"RipSetup").IsEnabled,"New Ripley creates an editable run while retaining the locked history entry");
-
-        var legacy=Path.Combine(temp,"legacy-lock-state");Directory.CreateDirectory(legacy);
-        foreach(var name in new[]{"settings.json","history.json","queue.json"})File.Copy(Path.Combine(temp,"state",name),Path.Combine(legacy,name));
-        var doc=System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(legacy,"history.json")))!;
-        foreach(var session in doc["Sessions"]!.AsArray())session!["QueuedAtUtc"]=null;
-        File.WriteAllText(Path.Combine(legacy,"history.json"),doc.ToJsonString());
-        var upgraded=new MainWindow(legacy);
-        Check(((ObservableCollection<RipSession>)Field(upgraded,"ripHistory")!).Single(s=>s.Id==locked.Id).IsLocked&&!(bool)Field(upgraded,"encoding")!,"Existing completed runs already represented in the saved queue acquire a persistent lock on upgrade");
-
-        var batch=new MainWindow(Path.Combine(temp,"batch-lock-state"));Configure(batch,temp,fake,preset);
-        var raw=Path.Combine(temp,"lock-batch-raw");var files=MakeDisc(raw,"ICARLY_S4_D1","iCarly","82493","4",2);
-        var run=new RipSession{Status="Completed",DiscLabel="ICARLY_S4_D1",Files=files,RawFolder=raw,Season="4"};
-        ((ObservableCollection<RipSession>)Field(batch,"ripHistory")!).Add(run);Control<ListBox>(batch,"HistoryList").SelectedItem=run;
-        var options=(Options)Call(batch,"Snapshot")!;var planned=FolderNames.PlanFiles([files[0]],[raw],options,Text(batch,"OutputTemplate").Text);
-        Call(batch,"Enqueue",planned,planned[0].Encoding!,"Custom test");
-        Check(!run.IsLocked&&Jobs(batch).Count==1,"Queueing only part of a run keeps the remaining files available to add");
-        Folders(batch).Add(raw);await (Task)Call(batch,"QueueExisting")!;
-        Check(run.IsLocked&&Jobs(batch).Count==2&&Jobs(batch).All(j=>j.Status=="Waiting"),"Adding the remaining files through Existing rips locks the run without starting compression");
+        Check(((ObservableCollection<RipSession>)Field(w,"ripHistory")!).Count==2&&!((RipSession)Field(w,"currentRipSession")!).IsLocked&&Control<StackPanel>(w,"RipSetup").IsEnabled,"New Ripley creates an editable run while retaining locked history");
+        w.Close();
+    }
+    static async Task CheckCancellation(MainWindow w,string temp)
+    {
+        Call(w,"NewRipley",w,new RoutedEventArgs());Text(w,"DiscLabel").Text="ICARLY_S1_V2_D2";
+        Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","wait");var ripping=(Task)Call(w,"RipDiscCore")!;
+        var progress=(RipQueue)Field(w,"ripQueue")!;await Until(()=>progress.Files.Count>0&&progress.Files[0].Bytes>0);
+        var history=(ObservableCollection<RipSession>)Field(w,"ripHistory")!;var current=(RipSession)Field(w,"currentRipSession")!;var count=history.Count;
+        Call(w,"NewRipley",w,new RoutedEventArgs());Control<ListBox>(w,"HistoryList").SelectedItem=history.First(h=>h.Id!=current.Id);
+        Check(history.Count==count&&ReferenceEquals(Control<ListBox>(w,"HistoryList").SelectedItem,current),"An active disc session cannot be replaced by new or historical settings");
+        Call(w,"ShowPage","Settings");Call(w,"OpenRipHistory",new Button{DataContext=current},new RoutedEventArgs());
+        Check(Control<FrameworkElement>(w,"RipPage").Visibility==Visibility.Visible&&Control<Button>(w,"CancelRipButton").IsEnabled,"The active rip and cancel control remain reachable from Settings");
+        Call(w,"CancelRip",w,new RoutedEventArgs());await ripping;Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);
+        Check(current.Status=="Cancelled"&&progress.Files[0].Status=="Kept · unverified"&&!Control<Button>(w,"SendTuckerButton").IsEnabled,$"Cancelling retains incomplete raw files and never offers them to Tucker ({current.Status}, {progress.Files[0].Status}, send={Control<Button>(w,"SendTuckerButton").IsEnabled}, {Control<TextBlock>(w,"RipStatus").Text})");
     }
     static List<Job> MakeDisc(string root,string label,string series,string id,string season,int count)
     {
@@ -237,80 +217,49 @@ class Program
         for(var i=0;i<count;i++)File.WriteAllText(Path.Combine(rip.Files,$"title_t{i:00}.mkv"),"raw data");
         return rip.Publish("{season}_{disc_label}_",ctx,null,CancellationToken.None);
     }
-    static async Task CheckQueues(MainWindow w,string temp,string fake)
-    {
-        var root=Path.Combine(temp,"mixed-rips");MakeDisc(root,"ICARLY_S2_D1","iCarly","82493","2",2);MakeDisc(root,"OTHER_S3_D1","Other series","123","3",1);
-        Folders(w).Add(root);Text(w,"Season").Text="not a season";Text(w,"Volume").Text="not a volume";
-        Call(w,"ShowSources",w,new RoutedEventArgs());await (Task)Call(w,"QueueExisting")!;
-        Check(Jobs(w).Count==4&&Jobs(w).All(j=>j.Status=="Waiting")&&!((bool)Field(w,"encoding")!),"Adding existing rips does not start idle compression");
-        Check(Jobs(w).Select(j=>j.QueueId).Distinct().Count()==3&&Jobs(w).Select(j=>j.Series!.Id).Distinct().Count()==2&&Jobs(w).Any(j=>j.Season=="3"),"Mixed discs become separate queues with their own series and season");
-        var first=Jobs(w)[0].QueueId;
-        var firstJob=Jobs(w)[0];var requestedOutput=firstJob.OutputPath;
-        Directory.CreateDirectory(Path.GetDirectoryName(requestedOutput)!);File.WriteAllText(requestedOutput,"existing output");
-        await (Task)Call(w,"StartQueues",first)!;
-        Check(firstJob.OutputPath!=requestedOutput&&Path.IsPathFullyQualified(firstJob.Source)&&Path.IsPathFullyQualified(firstJob.OutputPath)&&File.Exists(firstJob.OutputPath)&&File.ReadAllText(requestedOutput)=="existing output","Displayed paths retain the full source and follow the final collision-safe output filename");
-        Check(Jobs(w).Where(j=>j.QueueId==first).All(j=>j.Status=="Completed")&&Jobs(w).Where(j=>j.QueueId!=first).All(j=>j.Status=="Waiting"),"Start selected queue processes only that disc");
-        var waiting=Jobs(w).Where(j=>j.Status=="Waiting").ToArray();
-        var second=waiting.First(j=>j.QueueId==waiting[0].QueueId&&!ReferenceEquals(j,waiting[0]));Jobs(w).Remove(second);Jobs(w).Add(second);
-        var order=new List<string>();foreach(var job in waiting)job.PropertyChanged+=(_,e)=>{if(e.PropertyName=="Status"&&job.Status=="Encoding")order.Add(job.QueueId);};
-        await (Task)Call(w,"StartQueues",(object?)null)!;
-        Check(order.Count==3&&order[0]==order[1]&&order[1]!=order[2],"Start all finishes each disc queue before moving to the next even when rows are interleaved");
-        Check(Jobs(w).All(j=>j.Status=="Completed")&&Jobs(w).All(j=>File.Exists(Path.Combine(j.Encoding!.Output,j.Name))),"Start all queues processes every disc in order");
-        Check(Jobs(w).All(j=>{var doc=System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(j.Encoding!.Output,j.Name+".ripley.json")))!;return doc["season"]!.ToString()==j.Season&&doc["series_identity"]!["Id"]!.ToString()==j.Series!.Id;}),"Each compressed sidecar retains its source identity");
-        var counts=Jobs(w).Count;await (Task)Call(w,"QueueExisting")!;Check(Jobs(w).Count==counts,"Repeated batch additions report existing entries without duplicates");
-        File.WriteAllText(Path.Combine(root,"unknown.mkv"),"unknown");
-        bool failed=false;try{await (Task)Call(w,"QueueExisting")!;}catch(IOException){failed=true;}
-        Check(failed&&Jobs(w).Count==counts,"Missing per-file metadata rejects a batch without partially changing the queues");
-        var unknown=Path.GetFullPath(Path.Combine(root,"unknown.mkv"));File.Delete(unknown);
-    }
-    static async Task AddDisc(MainWindow w,string temp,string label,int count=1)
-    {
-        var root=Path.Combine(temp,label);MakeDisc(root,label,"iCarly","82493","1",count);Folders(w).Clear();Folders(w).Add(root);await (Task)Call(w,"QueueExisting")!;
-    }
-    static async Task CheckStopAndPause(MainWindow w,string temp,string fake)
-    {
-        await AddDisc(w,temp,"PAUSE_S1_D1",2);
-        Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","encode-delay");var running=(Task)Call(w,"StartQueues",(object?)null)!;
-        await Until(()=>Jobs(w).Any(j=>j.Status=="Encoding"));
-        Call(w,"PauseAfterCurrent",w,new RoutedEventArgs());
-        Check(((bool)Field(w,"pauseAfterCurrent")!)&&Control<Button>(w,"StartButton").Content.ToString()=="Add to queue","Pause after current file changes new additions to waiting");
-        await AddDisc(w,temp,"WAIT_FOR_PAUSE_D2");await running;Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);
-        Check(Jobs(w).Where(j=>j.QueueName.Contains("WAIT_FOR_PAUSE_D2")).All(j=>j.Status=="Waiting"),"Files added while pausing do not extend the current run");
-        var pausedJobs=Jobs(w).Where(j=>j.QueueName.Contains("PAUSE_S1_D1")).ToArray();
-        Check(pausedJobs.Count(j=>j.Status=="Completed")==1&&pausedJobs.Count(j=>j.Status=="Paused")==1&&File.Exists(Path.Combine(pausedJobs[0].Encoding!.Output,pausedJobs[0].Name)),"Graceful pause saves the current file and leaves the next file paused");
-        Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","encode-delay");running=(Task)Call(w,"StartQueues",(object?)null)!;await Until(()=>Jobs(w).Any(j=>j.Status=="Encoding"));
-        Check(Control<Button>(w,"StartButton").Content.ToString()=="Add to running queue","Add action clearly identifies a running queue");
-        await AddDisc(w,temp,"JOIN_S1_D2");await running;Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);
-        Check(Jobs(w).Where(j=>j.QueueName.Contains("JOIN_S1_D2")).All(j=>j.Status=="Completed"),"Explicit Add to running queue includes a new disc without another start action");
-        await AddDisc(w,temp,"STOP_S1_D3",2);
-        Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","encode-wait");running=(Task)Call(w,"StartQueues",(object?)null)!;
-        await Until(()=>Directory.GetFiles(Text(w,"Destination").Text,"encoding.mkv",SearchOption.AllDirectories).Length>0);
-        Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","wait");Text(w,"Season").Text="1";Text(w,"Volume").Text="2";var ripping=(Task)Call(w,"RipDiscCore")!;
-        var ripProgress=(RipQueue)Field(w,"ripQueue")!;await Until(()=>ripProgress.Current?.Progress==50);
-        var current=Field(w,"currentRipSession");var history=(ObservableCollection<RipSession>)Field(w,"ripHistory")!;
-        Control<ListBox>(w,"HistoryList").SelectedItem=history.First(h=>h!=current);
-        Check(!Control<Button>(w,"NewRipleyButton").IsEnabled&&ReferenceEquals(Field(w,"currentRipSession"),current)&&ReferenceEquals(Control<ListBox>(w,"HistoryList").SelectedItem,current),"An active disc session cannot be replaced by new or historical settings");
-        Call(w,"ShowCompressionQueue");Call(w,"OpenRipHistory",new Button{DataContext=current},new RoutedEventArgs());
-        Check(Control<FrameworkElement>(w,"RipPage").Visibility==Visibility.Visible&&(bool)Field(w,"discBusy")!,"The active rip remains reachable from history while compression navigation is available");
-        Check((bool)Field(w,"encoding")!&&Jobs(w).Count(j=>j.QueueName.Contains("STOP_S1_D3"))==2,"Ripping while compression runs does not extend the queue");
-        Call(w,"StopAllOperations");await Task.WhenAll(running,ripping);Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);
-        Check(!(bool)Field(w,"encoding")!&&!(bool)Field(w,"discBusy")!&&Jobs(w).Where(j=>j.QueueName.Contains("STOP_S1_D3")).All(j=>j.Status=="Paused"),"Stop all interrupts both operations and retains paused jobs");
-        Check(Directory.GetFiles(Text(w,"Destination").Text,"encoding.mkv",SearchOption.AllDirectories).Length==0&&ripProgress.Files[0].Status=="Kept · unverified"&&Jobs(w).Where(j=>j.Status=="Completed").All(j=>File.Exists(Path.Combine(j.Encoding!.Output,j.Name))),"Stop all cleans unfinished compressed output while retaining raw and completed files");
-    }
-    static async Task CheckClear(MainWindow w,string temp,string fake)
-    {
-        var raw=Jobs(w)[0].Source;var done=Jobs(w).First(j=>j.Status=="Completed");var completed=Path.Combine(done.Encoding!.Output,done.Name);
-        Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","encode-wait");var running=(Task)Call(w,"StartQueues",(object?)null)!;
-        await Until(()=>Directory.GetFiles(Text(w,"Destination").Text,"encoding.mkv",SearchOption.AllDirectories).Length>0);
-        using var disc=new CancellationTokenSource();Set(w,"discCancel",disc);Call(w,"SetDiscBusy",true);
-        var clear=(Task)Call(w,"ClearQueueEntries")!;
-        Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);
-        var replacement=MakeDisc(Path.Combine(temp,"after-clear"),"AFTER_CLEAR_D1","iCarly","82493","1",1);
-        var options=done.Encoding!;var planned=FolderNames.PlanFiles(replacement,[Path.GetDirectoryName(replacement[0].Source)!],options,"iCarly");
-        Call(w,"Enqueue",planned,planned[0].Encoding!,"Custom test");await clear;await running;
-        Check(!disc.IsCancellationRequested&&Jobs(w).Count==1&&Jobs(w)[0].Status=="Waiting"&&!((bool)Field(w,"encoding")!),"Clear stops encoding without cancelling ripping or starting files added during cleanup");
-        Check(File.Exists(raw)&&File.Exists(completed),"Clearing queues preserves raw and completed media");
-        Call(w,"SetDiscBusy",false);Set(w,"discCancel",null);
+    static async Task CheckTuckerInbox(string temp,string fake,string? renders) {
+        var state=Path.Combine(temp,"handoff-ui-state");var w=new MainWindow(state);Configure(w,temp,fake);
+        var raw=Path.Combine(temp,"handoff-ui-raw");var files=MakeDisc(raw,"ICARLY_S4_D1","iCarly","82493","4",2);
+        var run=new RipSession{Status="Completed",DiscLabel="ICARLY_S4_D1",Files=files,RawFolder=raw,Season="4"};
+        ((ObservableCollection<RipSession>)Field(w,"ripHistory")!).Add(run);Control<ListBox>(w,"HistoryList").SelectedItem=run;
+        Check(Control<Button>(w,"SendTuckerButton").IsEnabled,"Completed run exposes Send to Tucker as its only onward action");
+        Call(w,"SendToTucker",w,new RoutedEventArgs());
+        Check(run.IsLocked&&run.HandoffStatus=="Offered"&&!File.Exists(Path.Combine(state,"queue.json"))&&w.FindName("QueueRipButton")==null&&Control<Button>(w,"SendTuckerButton").Content.ToString()=="Awaiting Tucker","Send locks the run, offers inbox work, and never adds local jobs");
+        Call(w,"SendToTucker",w,new RoutedEventArgs());
+        var restored=new MainWindow(state);var saved=((ObservableCollection<RipSession>)Field(restored,"ripHistory")!).Single(s=>s.Id==run.Id);
+        Check(saved.IsLocked&&saved.HandoffId==run.HandoffId&&saved.HandoffStatus=="Offered","Reopening keeps the immutable handoff and pending acceptance lock");
+        restored.Close();
+        using(var sql=new Doggo.Sqlite(Path.Combine(state,"doggo.db")))sql.Exec("UPDATE handoff_batches SET status='Accepted' WHERE id=?",run.HandoffId);
+        restored=new MainWindow(state);saved=((ObservableCollection<RipSession>)Field(restored,"ripHistory")!).Single(s=>s.Id==run.Id);
+        Check(saved.HandoffStatus=="Accepted"&&saved.HandoffAcceptedUtc.HasValue&&Control<Button>(restored,"SendTuckerButton").Content.ToString()=="Accepted by Tucker","Ripley reads durable acceptance on startup when acceptance happened while Ripley was closed");
+        var state2=Path.Combine(temp,"outbox-crash-state");Directory.CreateDirectory(state2);
+        var pending=new RipSession{Status="Completed",DiscLabel="ICARLY_S4_D1",Files=files,RawFolder=raw,Season="4"};
+        QueueStore.Write(Path.Combine(state2,"history.json"),new{Selected=pending.Id,Sessions=new[]{pending}});
+        TuckerHandoff.Prepare(state2,System.Text.Json.JsonSerializer.SerializeToNode(pending)!.AsObject());
+        var recovered=new MainWindow(state2);var recoveredRun=((ObservableCollection<RipSession>)Field(recovered,"ripHistory")!).Single();
+        Check(recoveredRun.IsLocked&&recoveredRun.HandoffStatus=="Not delivered"&&Control<Button>(recovered,"SendTuckerButton").Content.ToString()=="Retry send to Tucker","Crash after outbox write recovers frozen run without auto-delivery or local duplication");
+        var offlineState=Path.Combine(temp,"outbox-offline-state");Directory.CreateDirectory(offlineState);
+        var offlineRun=new RipSession{Status="Completed",DiscLabel="ICARLY_S4_D1",Files=files,RawFolder=raw,Season="4"};
+        QueueStore.Write(Path.Combine(offlineState,"history.json"),new{Selected=offlineRun.Id,Sessions=new[]{offlineRun}});
+        TuckerHandoff.Prepare(offlineState,System.Text.Json.JsonSerializer.SerializeToNode(offlineRun)!.AsObject());
+        var offlineManifest=File.ReadAllBytes(TuckerHandoff.ManifestPath(offlineState,offlineRun.Id));
+        // A directory at the database path simulates unavailable shared storage without touching live data.
+        var unavailableDatabase=Path.Combine(offlineState,"doggo.db");Directory.CreateDirectory(unavailableDatabase);
+        var offline=new MainWindow(offlineState);var frozen=((ObservableCollection<RipSession>)Field(offline,"ripHistory")!).Single();
+        Check(frozen.IsLocked&&frozen.HandoffStatus=="Not delivered"&&Control<Button>(offline,"SendTuckerButton").Content.ToString()=="Retry send to Tucker","Outbox recovery locks the run even when the shared database cannot open");
+        var persisted=System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(offlineState,"history.json")))!;
+        Check(persisted["Sessions"]![0]!["HandoffId"]!.ToString()==frozen.HandoffId,"Recovered handoff lock is saved before contacting the unavailable database");
+        Call(offline,"SendToTucker",offline,new RoutedEventArgs());
+        Check(frozen.IsLocked&&frozen.HandoffStatus=="Not delivered"&&File.ReadAllBytes(TuckerHandoff.ManifestPath(offlineState,frozen.Id)).SequenceEqual(offlineManifest),"Failed delivery preserves the original request and leaves retry available");
+        Directory.Delete(unavailableDatabase);
+        Call(offline,"SendToTucker",offline,new RoutedEventArgs());Call(offline,"SendToTucker",offline,new RoutedEventArgs());
+        using(var sql=new Doggo.Sqlite(unavailableDatabase))Check(frozen.HandoffStatus=="Offered"&&sql.Query("SELECT id FROM handoff_batches").Count==1&&sql.Query("SELECT id FROM handoff_events WHERE kind='Offered'").Count==1,"Retry after database recovery delivers exactly one inbox request");
+        using(var sql=new Doggo.Sqlite(unavailableDatabase))sql.Exec("UPDATE handoff_batches SET status='Declined' WHERE id=?",frozen.HandoffId);
+        Call(offline,"RefreshHandoffs");
+        Check(frozen.IsLocked&&frozen.HandoffStatus=="Declined"&&!Control<Button>(offline,"SendTuckerButton").IsEnabled&&files.All(f=>File.Exists(f.Source)),"Declined inbox request stays locked and retains every raw file");
+        offline.Close();
+        if(renders!=null){Directory.CreateDirectory(renders);await Render(restored,1440,920,Path.Combine(renders,"tucker-accepted.png"));await Render(recovered,1080,740,Path.Combine(renders,"tucker-retry-minimum.png"));}
+        w.Close();restored.Close();recovered.Close();
     }
     static async Task Render(MainWindow window,int width,int height,string path) {
         var root=(FrameworkElement)window.Content;root.Measure(new Size(width,height));root.Arrange(new Rect(0,0,width,height));root.UpdateLayout();

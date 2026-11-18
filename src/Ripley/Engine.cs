@@ -10,6 +10,7 @@ public sealed class Job : INotifyPropertyChanged
     public string QueueName { get; set; } = "Saved queue";
     Options? encoding;
     public Options? Encoding { get => encoding; set { encoding = value; Changed(); Changed(nameof(OutputPath)); } }
+    public string CompletedOutput { get; set; } = "";
     public string Error { get; set; } = "";
     public SeriesIdentity? Series { get; set; }
     public string Season { get; set; } = "";

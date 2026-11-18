@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 namespace Ripley;
 
 public sealed class RipSession : INotifyPropertyChanged
@@ -27,11 +28,17 @@ public sealed class RipSession : INotifyPropertyChanged
     public List<Job> Files {get;set;}=new();
     public List<RipFile> Progress {get;set;}=new();
     public double Overall {get;set;}
+    public string HandoffId {get;set;}="";
+    public string HandoffStatus {get;set;}="";
+    public DateTime? HandoffAcceptedUtc {get;set;}
+    public string CompressionOutcome {get;set;}="";
+    public DateTime? ReconciledAtUtc {get;set;}
     public DateTime? QueuedAtUtc {get;set;}
+    public bool Archived {get;set;}
     [System.Text.Json.Serialization.JsonIgnore]
-    public bool IsLocked=>QueuedAtUtc.HasValue;
+    public bool IsLocked=>QueuedAtUtc.HasValue||HandoffId.Length>0;
     public string Title=>DiscLabel.Length==0?"New Ripley":(Series?.Name is {Length:>0} name?name+" · ":"")+DiscLabel;
-    public string Subtitle=>$"{Created:MMM d, h:mm tt} · {(IsLocked?"Queued · locked":Status)}"+(Files.Count>0?$" · {Files.Count} files":"");
+    public string Subtitle=>$"{Created:MMM d, h:mm tt} · {(HandoffId.Length>0?"Tucker · "+HandoffStatus:CompressionOutcome.Length>0?CompressionOutcome:IsLocked?"Queued · locked":Status)}"+(Files.Count>0?$" · {Files.Count} files":"");
     public event PropertyChangedEventHandler? PropertyChanged;
     public void Refresh()=>PropertyChanged?.Invoke(this,new(null));
 }
@@ -39,18 +46,21 @@ public sealed class RipSession : INotifyPropertyChanged
 public partial class MainWindow
 {
     readonly ObservableCollection<RipSession> ripHistory=new();
+    ICollectionView? historyView;
     RipSession? currentRipSession;
     bool historyReady,restoringHistory;
     DateTime lastHistoryWrite=DateTime.MinValue;
     string HistoryPath=>Path.Combine(stateRoot,"history.json");
     record HistoryDocument(string? Selected,List<RipSession> Sessions);
-    const string LockedRipMessage="Run locked · Files added to compression. Choose New Ripley for the next disc.";
-    bool RipLocked=>currentRipSession?.IsLocked==true;
+    string LockedRipMessage=>showArchived?"Archived run · Restore it to return to your history. Raw files and Tucker requests are kept.":currentRipSession?.HandoffId.Length>0?currentRipSession.Detail:currentRipSession?.CompressionOutcome=="Completed"?"Compression completed · run locked. Choose New Ripley for the next disc.":"Run locked · Files added to compression. Choose New Ripley for the next disc.";
+    bool RipLocked=>showArchived||currentRipSession?.IsLocked==true;
     bool EditableRip=>!RipLocked&&(currentRipSession==null||currentRipSession.Status=="Draft");
 
     void InitializeHistory()
     {
-        HistoryList.ItemsSource=ripHistory;
+        historyView=CollectionViewSource.GetDefaultView(ripHistory);
+        historyView.Filter=item=>item is RipSession session&&session.Archived==showArchived;
+        HistoryList.ItemsSource=historyView;
         var saved=File.Exists(HistoryPath)?JsonSerializer.Deserialize<HistoryDocument>(File.ReadAllText(HistoryPath)):null;
         foreach(var session in saved?.Sessions??[]) {
             if(session.Status is "Ripping" or "Inspecting") {
@@ -60,9 +70,10 @@ public partial class MainWindow
             ripHistory.Add(session);
         }
         historyReady=true;
-        if(ripHistory.Count>0) HistoryList.SelectedItem=ripHistory.FirstOrDefault(s=>s.Id==saved?.Selected)??ripHistory[0];
+        HistoryList.SelectedItem=ripHistory.FirstOrDefault(s=>!s.Archived&&s.Id==saved?.Selected)??ripHistory.FirstOrDefault(s=>!s.Archived);
         LockQueuedRips();
         SaveHistory();
+        RefreshHistoryControls();
     }
     void NewRipley(object sender,RoutedEventArgs e)
     {
@@ -73,6 +84,7 @@ public partial class MainWindow
     void CreateRipSession(bool clearDisc)
     {
         CaptureHistory();
+        showArchived=false;historyView?.Refresh();
         var session=new RipSession {Series=series,RawFolder=RawFolder.Text,RawFormat=RawTemplate.Text,Prefix=FilenamePrefix.Text,Minimum=Minimum.Text,AutoSeason=AutoSeason.IsChecked==true,
             DiscLabel=clearDisc?"":DiscLabel.Text,Season=clearDisc?"":Season.Text,Volume=clearDisc?"":Volume.Text,DiscNumber=clearDisc?"":DiscNumber.Text};
         ripHistory.Insert(0,session);HistoryList.SelectedItem=session;SaveHistory();
@@ -109,7 +121,7 @@ public partial class MainWindow
     }
     void CaptureHistory()
     {
-        if(!historyReady||restoringHistory||currentRipSession is not {IsLocked:false} session)return;
+        if(!historyReady||restoringHistory||currentRipSession is not {IsLocked:false,Archived:false} session)return;
         session.Series=series;session.DiscLabel=DiscLabel.Text;session.Season=Season.Text;session.Volume=Volume.Text;session.DiscNumber=DiscNumber.Text;
         session.RawFolder=RawFolder.Text;session.RawFormat=RawTemplate.Text;session.Prefix=FilenamePrefix.Text;session.Minimum=Minimum.Text;session.AutoSeason=AutoSeason.IsChecked==true;
         session.Disc=inspected??session.Disc;session.DiscSource=inspectedSource;session.Files=lastRipFiles.ToList();session.Overall=ripQueue.Overall;session.Detail=RipStatus.Text;
@@ -131,7 +143,7 @@ public partial class MainWindow
     void LockQueuedRips()
     {
         if(!historyReady)return;
-        var queuedSources=jobs.Select(j=>j.Source).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var queuedSources=legacyQueuedSources;
         var completed=ripHistory.Where(s=>!s.IsLocked&&s.Status=="Completed"&&s.Files.Count>0&&s.Files.All(f=>queuedSources.Contains(f.Source))).ToArray();
         if(completed.Length==0)return;
         CaptureHistory();

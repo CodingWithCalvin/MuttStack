@@ -33,22 +33,31 @@
           <StackPanel>
             <Image Source="Assets/Ripley.png" Width="96" Height="96" HorizontalAlignment="Center" Margin="0,0,0,20" RenderOptions.BitmapScalingMode="HighQuality" AutomationProperties.Name="Ripley icon" />
             <Button x:Name="NewRipleyButton" Content="New Ripley" Click="NewRipley" Style="{StaticResource Primary}" Margin="0,0,0,18" ToolTip="Start a new disc session in history. Available after the current disc operation finishes." />
-            <Button x:Name="SideCompress" Click="BackToQueue" Style="{StaticResource NavButton}">
-              <StackPanel>
-                <StackPanel Orientation="Horizontal">
-                  <Path Style="{StaticResource LineIcon}" Data="{StaticResource ActivityIcon}" Margin="0,0,10,0" />
-                  <TextBlock Text="Compression Queue" />
-                </StackPanel>
-                <TextBlock x:Name="SidebarQueueSummary" Text="No files queued" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
-              </StackPanel>
-            </Button>
           </StackPanel>
           <Grid Grid.Row="1" Margin="0,20,0,0">
-            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-            <TextBlock Text="RIPLEY HISTORY" Foreground="#7F9E8B" FontSize="10" Margin="14,0,0,12" />
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <DockPanel Margin="14,0,0,12">
+              <Button x:Name="ShowArchivedHistory" Content="Archived (0)" Click="ToggleArchiveHistory" DockPanel.Dock="Right" Padding="6,4" Margin="6,0,0,0" FontSize="11" Visibility="Collapsed" />
+              <TextBlock x:Name="HistoryHeading" Text="RIPLEY HISTORY" Foreground="#7F9E8B" FontSize="10" VerticalAlignment="Center" />
+            </DockPanel>
+            <TextBlock x:Name="EmptyHistory" Grid.Row="1" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="14,8" VerticalAlignment="Top" IsHitTestVisible="False" />
             <ListBox x:Name="HistoryList" Grid.Row="1" SelectionChanged="HistorySelected" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
               <ListBox.ItemContainerStyle>
                 <Style TargetType="ListBoxItem">
+                  <EventSetter Event="PreviewMouseRightButtonDown" Handler="HistoryRightClick" />
+                  <EventSetter Event="ContextMenuOpening" Handler="HistoryMenuOpening" />
+                  <Setter Property="ToolTip" Value="Right-click to archive, restore or delete this history entry." />
+                  <Setter Property="ContextMenu">
+                    <Setter.Value>
+                      <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                        <MenuItem Header="Archive" />
+                        <MenuItem Header="Delete" />
+                      </ContextMenu>
+                    </Setter.Value>
+                  </Setter>
                   <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                   <Setter Property="Template">
                     <Setter.Value>
@@ -57,8 +66,13 @@
                           <ContentPresenter HorizontalAlignment="Stretch" />
                         </Border>
                         <ControlTemplate.Triggers>
-                          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="HistoryItem" Property="Background" Value="#193B27" /></Trigger>
-                          <Trigger Property="IsSelected" Value="True"><Setter TargetName="HistoryItem" Property="Background" Value="#193B27" /><Setter TargetName="HistoryItem" Property="BorderBrush" Value="#78D6A1" /></Trigger>
+                          <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="HistoryItem" Property="Background" Value="#193B27" />
+                          </Trigger>
+                          <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="HistoryItem" Property="Background" Value="#193B27" />
+                            <Setter TargetName="HistoryItem" Property="BorderBrush" Value="#78D6A1" />
+                          </Trigger>
                         </ControlTemplate.Triggers>
                       </ControlTemplate>
                     </Setter.Value>
@@ -68,10 +82,10 @@
               <ListBox.ItemTemplate>
                 <DataTemplate>
                   <Button Click="OpenRipHistory" Background="Transparent" BorderThickness="0" Padding="0" Margin="0" HorizontalContentAlignment="Stretch">
-                  <StackPanel>
-                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                  </StackPanel>
+                    <StackPanel>
+                      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                    </StackPanel>
                   </Button>
                 </DataTemplate>
               </ListBox.ItemTemplate>
@@ -98,7 +112,6 @@
         <StackPanel Margin="0,0,0,12">
           <TextBlock x:Name="PageHeading" Text="New Ripley" FontSize="22" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
           <TextBlock x:Name="PageSubtitle" Text="Insert a disc, choose the series, and set your folders and filenames." Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,12" />
-
         </StackPanel>
         <Grid x:Name="RipPage" Grid.Row="1" Visibility="Collapsed">
           <Grid.ColumnDefinitions>
@@ -134,10 +147,24 @@
                   <ListBox x:Name="SeriesResults" DisplayMemberPath="Display" Height="64" SelectionChanged="SeriesChanged">
                     <ListBox.Style>
                       <Style TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
-                        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBox"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"><ScrollViewer Focusable="False" HorizontalScrollBarVisibility="Disabled"><ItemsPresenter /></ScrollViewer></Border></ControlTemplate></Setter.Value></Setter>
+                        <Setter Property="Template">
+                          <Setter.Value>
+                            <ControlTemplate TargetType="ListBox">
+                              <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
+                                <ScrollViewer Focusable="False" HorizontalScrollBarVisibility="Disabled">
+                                  <ItemsPresenter />
+                                </ScrollViewer>
+                              </Border>
+                            </ControlTemplate>
+                          </Setter.Value>
+                        </Setter>
                         <Style.Triggers>
-                          <Trigger Property="HasItems" Value="False"><Setter Property="Visibility" Value="Collapsed" /></Trigger>
-                          <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.6" /></Trigger>
+                          <Trigger Property="HasItems" Value="False">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                          </Trigger>
+                          <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.6" />
+                          </Trigger>
                         </Style.Triggers>
                       </Style>
                     </ListBox.Style>
@@ -149,8 +176,15 @@
                   </DockPanel>
                   <TextBlock x:Name="SeriesOverview" Visibility="Collapsed" />
                   <Grid Margin="0,8,0,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                     <TextBlock Text="Season" FontSize="12" />
                     <TextBlock Text="Volume number" FontSize="12" Grid.Column="1" TextWrapping="Wrap" />
                     <TextBlock Text="Disc number" FontSize="12" Grid.Column="2" TextWrapping="Wrap" />
@@ -180,23 +214,45 @@
                   <TextBlock Text="04   Raw filename prefix" FontWeight="SemiBold" FontSize="17" />
                   <TextBox x:Name="FilenamePrefix" TextChanged="NamingChanged" Margin="0,5,0,5" ToolTip="{}{volume_number}_{disc_number}_" />
                   <TextBlock x:Name="FilenamePreview" Foreground="#78D6A1" FontSize="12" TextWrapping="Wrap" />
-                  <TextBlock Text="MakeMKV’s original filename follows the prefix. Raw files and disc metadata are kept. When the rip finishes, you can choose to add just those files to the Compression Queue." Foreground="#A1B8AA" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0" />
+                  <TextBlock Text="MakeMKV’s original filename follows the prefix. Raw files and disc metadata are kept. Send the completed run to Tucker’s inbox when ready." Foreground="#A1B8AA" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0" />
                 </StackPanel>
               </Border>
-            <WrapPanel Margin="0,10,0,4">
-              <WrapPanel.Resources><Style TargetType="TextBlock"><Setter Property="FontSize" Value="12" /><Setter Property="Foreground" Value="#A1B8AA" /><Setter Property="Margin" Value="0,0,8,4" /></Style></WrapPanel.Resources>
-              <TextBlock Text="{}{series}" /><TextBlock Text="{}{year}" /><TextBlock Text="{}{tvdb_id}" /><TextBlock Text="{}{season:00}" /><TextBlock Text="{}{volume_number:00}" /><TextBlock Text="{}{disc_number:00}" /><TextBlock Text="{}{disc_label}" /><TextBlock Text="{}{date}" />
-            </WrapPanel>
-            <TextBlock Text="Use \ for subfolders." Foreground="#A1B8AA" FontSize="12" Margin="0,0,0,4" />
-            <TextBlock Text="The folder formats choose the destinations. Files from multiple discs can share those folders; filename collisions get (2), (3), …." Foreground="#A1B8AA" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,10" />
+              <WrapPanel Margin="0,10,0,4">
+                <WrapPanel.Resources>
+                  <Style TargetType="TextBlock">
+                    <Setter Property="FontSize" Value="12" />
+                    <Setter Property="Foreground" Value="#A1B8AA" />
+                    <Setter Property="Margin" Value="0,0,8,4" />
+                  </Style>
+                </WrapPanel.Resources>
+                <TextBlock Text="{}{series}" />
+                <TextBlock Text="{}{year}" />
+                <TextBlock Text="{}{tvdb_id}" />
+                <TextBlock Text="{}{season:00}" />
+                <TextBlock Text="{}{volume_number:00}" />
+                <TextBlock Text="{}{disc_number:00}" />
+                <TextBlock Text="{}{disc_label}" />
+                <TextBlock Text="{}{date}" />
+              </WrapPanel>
+              <TextBlock Text="Use \ for subfolders." Foreground="#A1B8AA" FontSize="12" Margin="0,0,0,4" />
+              <TextBlock Text="The folder formats choose the destinations. Files from multiple discs can share those folders; filename collisions get (2), (3), …." Foreground="#A1B8AA" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,10" />
             </StackPanel>
           </ScrollViewer>
           <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0">
             <Grid>
-              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
               <TextBlock Text="Ripping queue" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10" />
               <Grid x:Name="RipQueuePanel" Grid.Row="1" Visibility="Collapsed">
-                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
                 <TextBlock x:Name="RipQueueSummary" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
                 <ProgressBar x:Name="RipOverallProgress" Grid.Row="1" Height="5" Maximum="100" Margin="0,0,0,8" />
                 <TextBlock x:Name="RipFileActivity" Grid.Row="2" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10" />
@@ -204,10 +260,21 @@
                   <DataGrid.Columns>
                     <DataGridTextColumn Header="#" Binding="{Binding Number}" Width="30" />
                     <DataGridTextColumn Header="Raw filename" Binding="{Binding Name}" Width="*" MinWidth="110">
-                      <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="Margin" Value="6,8" /><Setter Property="ToolTip" Value="{Binding Name}" /></Style></DataGridTextColumn.ElementStyle>
+                      <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                          <Setter Property="TextWrapping" Value="Wrap" />
+                          <Setter Property="Margin" Value="6,8" />
+                          <Setter Property="ToolTip" Value="{Binding Name}" />
+                        </Style>
+                      </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
                     <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100">
-                      <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="Margin" Value="6,8" /></Style></DataGridTextColumn.ElementStyle>
+                      <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                          <Setter Property="TextWrapping" Value="Wrap" />
+                          <Setter Property="Margin" Value="6,8" />
+                        </Style>
+                      </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
                     <DataGridTemplateColumn Header="Progress" Width="80">
                       <DataGridTemplateColumn.CellTemplate>
@@ -225,7 +292,13 @@
               </Grid>
               <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="310" Margin="12">
                 <StackPanel.Style>
-                  <Style TargetType="StackPanel"><Style.Triggers><DataTrigger Binding="{Binding Visibility, ElementName=RipQueuePanel}" Value="Visible"><Setter Property="Visibility" Value="Collapsed" /></DataTrigger></Style.Triggers></Style>
+                  <Style TargetType="StackPanel">
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding Visibility, ElementName=RipQueuePanel}" Value="Visible">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
                 </StackPanel.Style>
                 <TextBlock Text="Ready for a disc" FontSize="18" FontWeight="SemiBold" TextAlignment="Center" />
                 <TextBlock Text="Inspect a disc to see its title count. Filenames and progress appear here as MakeMKV writes the raw files." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,10,0,0" />
@@ -234,191 +307,16 @@
             </Grid>
           </Border>
         </Grid>
-        <Grid x:Name="CompressPage" Grid.Row="1" Visibility="Collapsed">
-          <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-          <WrapPanel Margin="0,0,0,12">
-            <Button x:Name="CompressQueueTab" Content="Queues" Click="BackToQueue" Style="{StaticResource PageTab}" />
-            <Button x:Name="CompressSourcesTab" Content="Add existing rips" Click="ShowSources" Style="{StaticResource PageTab}" />
-            <Button x:Name="CompressOutputTab" Content="Output &amp; presets" Click="ShowCompressionSettings" Style="{StaticResource PageTab}" />
-          </WrapPanel>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="SourceSetup" Grid.Row="1" Visibility="Collapsed">
-          <Grid>
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-            <Border Style="{StaticResource Card}" Margin="0,0,12,12" VerticalAlignment="Top">
-              <StackPanel>
-                <TextBlock Text="Source folders" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,10" />
-              <TextBlock Text="Add disc, season, or series folders. Each file uses its own saved series, season, volume, and disc details. Older rips use explicit markers in source folder names or filenames; the currently inserted disc's values do not apply." TextWrapping="Wrap" Margin="0,0,0,10" />
-              <ListBox x:Name="Folders" Height="180" SelectionMode="Extended" />
-              <WrapPanel Margin="0,12,0,10">
-                <Button Content="+ Add folders" Click="AddFolders" />
-                <Button Content="Remove" Click="RemoveFolders" />
-              </WrapPanel>
-              <CheckBox x:Name="Recursive" Content="Include subfolders" IsChecked="True" />
-              <Expander Header="Series for older rips without metadata" Margin="0,16,0,8">
-                <StackPanel>
-                  <DockPanel Margin="0,8,0,5">
-                    <Button x:Name="CompressionSearchButton" Content="Search TVDB" Click="SearchCompressionSeries" DockPanel.Dock="Right" Margin="8,0,0,0" />
-                    <TextBox x:Name="CompressionSeriesQuery" />
-                  </DockPanel>
-                  <ListBox x:Name="CompressionSeriesResults" DisplayMemberPath="Display" SelectionChanged="CompressionSeriesChanged" Height="64" />
-                  <TextBlock x:Name="CompressionSearchStatus" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-                </StackPanel>
-              </Expander>
-              <CheckBox x:Name="ExistingUseSeries" IsChecked="False" Margin="0,16,0,5"><TextBlock Text="Use this series when metadata is missing" TextWrapping="Wrap" MaxWidth="260" /></CheckBox>
-              <TextBlock x:Name="ExistingSeriesSummary" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" />
-              </StackPanel>
-            </Border>
-            <Border Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,0,12" VerticalAlignment="Top">
-              <StackPanel>
-                <TextBlock Text="Output settings" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,12" />
-                <TextBlock Text="Compressed base folder" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock Text="{Binding Text, ElementName=Destination}" TextWrapping="Wrap" Margin="0,4,0,12" />
-                <TextBlock Text="Folder format · evaluated per file" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock Text="{Binding Text, ElementName=OutputTemplate}" TextWrapping="Wrap" Margin="0,4,0,12" />
-                <TextBlock Text="HandBrake preset" Foreground="{StaticResource MutedBrush}" />
-                <TextBlock Text="{Binding SelectedItem.Display, ElementName=PresetChoice, TargetNullValue=Choose a preset on Output &amp; presets}" TextWrapping="Wrap" Margin="0,4,0,12" />
-                <Button Content="Change output &amp; presets…" Click="ShowCompressionSettings" HorizontalAlignment="Left" />
-                <TextBlock x:Name="ExistingFeedback" Text="Add files to the queue, then choose Start all queues when ready." Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" Margin="0,16,0,0" />
-              </StackPanel>
-            </Border>
-          </Grid>
-        </ScrollViewer>
-        <ScrollViewer x:Name="CompressionSettings" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="Collapsed">
-            <Border Style="{StaticResource Card}" Margin="0,0,0,12" VerticalAlignment="Top">
-              <StackPanel>
-              <TextBlock Text="Compression output" FontSize="17" FontWeight="SemiBold" Margin="0,0,0,8" />
-              <TextBlock Text="Compressed output folder" />
-              <DockPanel Margin="0,5,0,10">
-                <Button Content="Browse…" Click="BrowseOutput" DockPanel.Dock="Right" Margin="8,0,0,0" />
-                <TextBox x:Name="Destination" TextChanged="CompressionNamingChanged" />
-              </DockPanel>
-              <TextBlock Text="Folder format · evaluated per file" />
-              <TextBox x:Name="OutputTemplate" TextChanged="CompressionNamingChanged" Margin="0,5,0,10" />
-              <TextBlock Text="Filename prefix · external rips only" />
-              <TextBox x:Name="CompressionPrefix" Margin="0,5,0,8" />
-              <TextBlock Text="These settings apply when adding files to the compression queue. Existing entries keep their settings. Ripley’s own rips already have their prefix. Preview names shows every source and destination." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" />
-                <DockPanel>
-                  <Button Content="Reload" Click="LoadPresets" DockPanel.Dock="Right" Margin="8,5,0,10" />
-                  <ComboBox x:Name="PresetChoice" DisplayMemberPath="Display" SelectionChanged="PresetChanged" />
-                </DockPanel>
-                <TextBlock x:Name="PresetSummary" TextWrapping="Wrap" Foreground="#A1B8AA" />
-                <TextBlock Text="Hardware decoding" Margin="0,12,0,0" />
-                <ComboBox x:Name="Hardware" SelectedIndex="0">
-                  <ComboBoxItem Content="Use installed HandBrake settings" />
-                  <ComboBoxItem Content="Software decoding" />
-                  <ComboBoxItem Content="NVIDIA NVDEC" />
-                  <ComboBoxItem Content="Intel QSV" />
-                </ComboBox>
-                <TextBlock Text="Encoder, quality, container, audio, subtitles and filters come from your preset. Hardware decoding depends on source format and driver support." TextWrapping="Wrap" Foreground="#A1B8AA" />
-
-              </StackPanel>
-            </Border>
-        </ScrollViewer>
-        <Grid x:Name="CompressionQueue" Grid.Row="1">
-          <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-          </Grid.RowDefinitions>
-          <DockPanel Margin="0,0,0,12">
-            <Button x:Name="ClearQueueButton" Content="Clear all queues" DockPanel.Dock="Right" Click="ClearQueue" Margin="12,0,0,0" ToolTip="Remove all queue entries; raw and completed files are kept" />
-            <TextBlock x:Name="QueueTitle" Text="Compress" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" />
-          </DockPanel>
-          <StackPanel Grid.Row="1" Margin="0,0,0,16">
-            <TextBlock x:Name="QueueNotice" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="Collapsed" />
-            <TextBlock x:Name="QueueStateText" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-          </StackPanel>
-          <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="200" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-            <ListBox x:Name="QueueList" SelectionChanged="QueueSelected" Margin="0,0,12,0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-              <ListBox.ItemContainerStyle>
-                <Style TargetType="ListBoxItem">
-                  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                  <Setter Property="Padding" Value="10,6" />
-                  <Setter Property="Template">
-                    <Setter.Value>
-                      <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="QueueItem" Background="Transparent" Padding="{TemplateBinding Padding}" BorderBrush="Transparent" BorderThickness="2,0,0,0">
-                          <ContentPresenter HorizontalAlignment="Stretch" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="QueueItem" Property="Background" Value="#224C33" /></Trigger>
-                          <Trigger Property="IsSelected" Value="True"><Setter TargetName="QueueItem" Property="Background" Value="#224C33" /><Setter TargetName="QueueItem" Property="BorderBrush" Value="#78D6A1" /></Trigger>
-                        </ControlTemplate.Triggers>
-                      </ControlTemplate>
-                    </Setter.Value>
-                  </Setter>
-                </Style>
-              </ListBox.ItemContainerStyle>
-              <ListBox.ItemTemplate>
-                <DataTemplate>
-                  <StackPanel Margin="4,8">
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                    <TextBlock Text="{Binding Summary}" FontSize="12" TextWrapping="Wrap" Margin="0,5,0,0" Foreground="{StaticResource MutedBrush}" />
-                  </StackPanel>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-          <DataGrid Grid.Column="1" x:Name="QueueGrid" RowHeight="NaN" VirtualizingPanel.ScrollUnit="Pixel">
-            <DataGrid.Columns>
-              <DataGridTemplateColumn Header="Input and output paths" Width="*" MinWidth="260">
-                <DataGridTemplateColumn.CellTemplate>
-                  <DataTemplate>
-                    <StackPanel Margin="10,10">
-                      <TextBlock Text="Input" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                      <TextBox Text="{Binding Source, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" Margin="0,3,0,8" AutomationProperties.Name="Full input file path" />
-                      <TextBlock Text="Output" FontSize="11" Foreground="{StaticResource MutedBrush}" />
-                      <TextBox Text="{Binding OutputPath, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" Background="Transparent" BorderThickness="0" Padding="0" Margin="0,3,0,0" AutomationProperties.Name="Full output file path" />
-                      <TextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}" Margin="0,5,0,0" />
-                    </StackPanel>
-                  </DataTemplate>
-                </DataGridTemplateColumn.CellTemplate>
-              </DataGridTemplateColumn>
-              <DataGridTextColumn Header="Preset" Binding="{Binding PresetDisplay}" Width="120">
-                <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="Margin" Value="8,10" /></Style></DataGridTextColumn.ElementStyle>
-              </DataGridTextColumn>
-              <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="105">
-                <DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="Margin" Value="8,10" /></Style></DataGridTextColumn.ElementStyle>
-              </DataGridTextColumn>
-            </DataGrid.Columns>
-          </DataGrid>
-          </Grid>
-        </Grid>
-        </Grid>
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" x:Name="SettingsPage" Grid.Row="1" Visibility="Collapsed">
-          <Grid Margin="0">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Border Style="{StaticResource Card}" Grid.Column="0" Margin="0,0,14,0">
-              <StackPanel Margin="0">
-                <Button Content="Compression output &amp; presets…" Click="ShowCompressionSettings" HorizontalAlignment="Left" Margin="0,0,0,18" />
-                <TextBlock Text="HandBrake preset file · installed GUI or exported JSON" />
-                <DockPanel Margin="0,5,0,10">
-                  <Button Content="Browse…" Click="BrowseJson" DockPanel.Dock="Right" Margin="8,0,0,0" />
-                  <TextBox x:Name="PresetFile" />
-                </DockPanel>
-              </StackPanel>
-            </Border>
-            <Border Style="{StaticResource Card}" Grid.Column="1" Margin="0">
-              <StackPanel Margin="0">
-                <TextBlock Text="HandBrakeCLI executable" />
-                <DockPanel Margin="0,5,0,10">
-                  <Button Content="Browse…" Click="BrowseCli" DockPanel.Dock="Right" Margin="8,0,0,0" />
-                  <TextBox x:Name="Cli" />
-                </DockPanel>
+          <StackPanel MaxWidth="820" HorizontalAlignment="Left">
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Text="Ripping tools" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,16" />
                 <TextBlock Text="MakeMKV console executable" />
                 <DockPanel Margin="0,5,0,10">
                   <Button Content="Browse…" Click="BrowseMakeMkv" DockPanel.Dock="Right" Margin="8,0,0,0" />
-                  <TextBox x:Name="MakeMkv" />
+                  <TextBox x:Name="MakeMkv" MinWidth="440" />
                 </DockPanel>
-                <TextBlock Text="HandBrake GUI settings (hardware preferences)" />
-                <DockPanel Margin="0,5,0,10">
-                  <Button Content="Browse…" Click="BrowseGuiSettings" DockPanel.Dock="Right" Margin="8,0,0,0" />
-                  <TextBox x:Name="GuiSettings" />
-                </DockPanel>
-                <Button Content="Check preset &amp; hardware" Click="CheckRuntime" HorizontalAlignment="Left" />
                 <TextBlock Text="Scout data folder · saved TVDB credentials" Margin="0,14,0,0" />
                 <DockPanel Margin="0,5,0,0">
                   <Button Content="Browse…" Click="BrowseScout" DockPanel.Dock="Right" Margin="8,0,0,0" />
@@ -426,7 +324,13 @@
                 </DockPanel>
               </StackPanel>
             </Border>
-          </Grid>
+            <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+              <StackPanel>
+                <TextBlock Text="Compression lives in Tucker" FontSize="20" FontWeight="SemiBold" />
+                <TextBlock Text="After ripping, choose Send to Tucker. Review the batch in Tucker’s inbox, choose its output and preset, then start compression there." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,10,0,0" />
+              </StackPanel>
+            </Border>
+          </StackPanel>
         </ScrollViewer>
         <Border Grid.Row="2" Background="#11251A" BorderBrush="#34533E" BorderThickness="0,1,0,0" Margin="0,12,0,0" Padding="12,10">
           <StackPanel>
@@ -434,24 +338,15 @@
               <ProgressBar x:Name="RipProgress" Height="3" Maximum="100" Margin="0,0,0,8" />
               <TextBlock x:Name="RipStatus" Text="Insert a disc. Drives update automatically; choose its series and folder formats." Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,0,0,8" />
             </StackPanel>
-            <ProgressBar x:Name="Progress" Height="3" Maximum="100" Margin="0,0,0,8" Visibility="Collapsed" />
-            <TextBlock x:Name="OutputSummary" Text="Choose raw folders on Rip and compressed output on Compress." Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,0,0,6" />
-            <TextBlock x:Name="Status" Text="Rip and Compress work independently. Adding to an idle queue never starts it." Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+            <TextBlock x:Name="OutputSummary" Text="Choose the raw-rip folder and naming format." Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,0,0,6" />
+            <TextBlock x:Name="Status" Text="Rip here, then send completed files to Tucker’s inbox for compression." Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
             <WrapPanel HorizontalAlignment="Right" Margin="0,10,0,0">
-              <Button x:Name="StopButton" Content="Pause after current file" Click="PauseAfterCurrent" IsEnabled="False" Padding="10,7" />
-              <Button x:Name="StartSelectedButton" Content="Start selected queue" Click="StartSelectedQueue" Padding="10,7" />
-              <Button x:Name="ResumeButton" Content="Start all queues" Click="Resume" Padding="10,7" />
-              <Button x:Name="StopAllButton" Content="Stop all…" Click="StopAll" Padding="10,7" ToolTip="Interrupt the active rip and encode. Raw and completed files are kept; unfinished compressed output is discarded and pending jobs are retained." />
               <Button x:Name="CancelRipButton" Content="Cancel disc operation" Click="CancelRip" Visibility="Collapsed" Padding="10,7" />
               <StackPanel x:Name="RipActions" Orientation="Horizontal">
+                <Button x:Name="RestoreHistoryButton" Content="Restore Ripley" Click="RestoreHistory" Visibility="Collapsed" Padding="10,7" />
                 <Button x:Name="InspectButton" Content="Inspect disc" Click="InspectDisc" Padding="10,7" />
-                <Button x:Name="QueueRipButton" Content="Add to queue" Click="QueueCompletedRip" Padding="10,7" ToolTip="Add only the completed files from the latest disc using your compression settings." />
+                <Button x:Name="SendTuckerButton" Content="Send to Tucker" Click="SendToTucker" Padding="10,7" ToolTip="Send completed raw files to Tucker’s inbox for review. No encoding starts automatically." />
                 <Button x:Name="RipButton" Content="Rip disc" Click="RipDisc" Style="{StaticResource Primary}" Padding="14,8" Margin="0" />
-              </StackPanel>
-              <StackPanel x:Name="SourceActions" Orientation="Horizontal" Visibility="Collapsed">
-                <Button Content="Back to queue" Click="BackToQueue" Padding="10,7" />
-                <Button x:Name="PreviewButton" Content="Preview names" Click="Preview" Padding="10,7" />
-                <Button x:Name="StartButton" Content="Add to queue" Click="Start" Style="{StaticResource Primary}" Padding="14,8" Margin="0" />
               </StackPanel>
               <Button x:Name="SaveSettingsButton" Content="Save settings" Click="SavePreferences" Style="{StaticResource Primary}" Visibility="Collapsed" Padding="14,8" Margin="0" />
             </WrapPanel>

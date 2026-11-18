@@ -225,6 +225,28 @@
           </Setter.Value>
         </Setter>
       </Style>
+      <Style TargetType="ContextMenu">
+        <Setter Property="Background" Value="#20372A" />
+        <Setter Property="BorderBrush" Value="#385B45" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="4" />
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContextMenu">
+          <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" CornerRadius="4"><ItemsPresenter /></Border>
+        </ControlTemplate></Setter.Value></Setter>
+      </Style>
+      <Style TargetType="MenuItem">
+        <Setter Property="Foreground" Value="#F0F7F2" />
+        <Setter Property="Padding" Value="14,9" />
+        <Setter Property="MinWidth" Value="140" />
+        <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="MenuItem">
+          <Border x:Name="MenuBody" Background="Transparent" Padding="{TemplateBinding Padding}" CornerRadius="3"><ContentPresenter ContentSource="Header" RecognizesAccessKey="True" /></Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="MenuBody" Property="Background" Value="#224C33" /></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="MenuBody" Property="Opacity" Value="0.4" /></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
+      </Style>
       <Style TargetType="CheckBox">
         <Setter Property="Foreground" Value="#D1E6D8" />
       </Style>

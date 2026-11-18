@@ -11,4 +11,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Ripley checks failed.' }
     & dotnet run --project 'tests\Ripley.Desktop.Tests\Ripley.Desktop.Tests.csproj' -c Release --no-build -- $fakeExecutable
     if ($LASTEXITCODE -ne 0) { throw 'Ripley desktop checks failed.' }
+    & dotnet run --project 'tests\Ripley.Handoff.Tests\Ripley.Handoff.Tests.csproj' -c Release --no-build
+    if ($LASTEXITCODE -ne 0) { throw 'Handoff checks failed.' }
 } finally { Pop-Location }
