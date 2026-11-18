@@ -5,8 +5,8 @@ namespace Doggo;
 public sealed class Sqlite : IDisposable
 {
     IntPtr db;
-    public Sqlite(string path) {
-        if (sqlite3_open_v2(path, out db, 6, IntPtr.Zero) != 0) { var message = Error; Dispose(); throw new IOException(message); }
+    public Sqlite(string path, bool readOnly = false) {
+        if (sqlite3_open_v2(path, out db, readOnly ? 1 : 6, IntPtr.Zero) != 0) { var message = Error; Dispose(); throw new IOException(message); }
         sqlite3_busy_timeout(db, 5000);
         Exec("PRAGMA foreign_keys=ON"); Exec("PRAGMA synchronous=FULL");
     }

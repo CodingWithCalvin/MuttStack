@@ -6,6 +6,7 @@ namespace Tucker;
 public partial class App : Application
 {
     Mutex? instance;
+    Doggo.StorageLease? storageLease;
     protected override void OnStartup(StartupEventArgs e) {
         base.OnStartup(e);
         try {
@@ -15,8 +16,9 @@ public partial class App : Application
             var key=Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(database.ToUpperInvariant())))[..20];
             instance=new Mutex(true,"Local\\Tucker."+key,out var created);
             if(!created){MessageBox.Show("Tucker is already open for this library.","Tucker");Shutdown();return;}
+            storageLease=Doggo.StorageLease.Acquire(false,database);
             MainWindow=new MainWindow(root,database);MainWindow.Show();
         }catch(Exception ex){MessageBox.Show("Could not open Tucker. Existing data was kept.\n\n"+ex.Message,"Tucker",MessageBoxButton.OK,MessageBoxImage.Error);Shutdown(1);}
     }
-    protected override void OnExit(ExitEventArgs e){instance?.Dispose();base.OnExit(e);}
+    protected override void OnExit(ExitEventArgs e){storageLease?.Dispose();instance?.Dispose();base.OnExit(e);}
 }
