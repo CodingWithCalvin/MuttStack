@@ -79,7 +79,7 @@ public partial class MainWindow
         LocalRuntime? runtime=null;ModelTransport? transport=null;HttpClient? modelHttp=null;
         try {
             if(!EnsureDraftScout())return;
-            var paths=ShowDiscovery.RandomSample(VideoSelection.Enumerate(workspace.Library));
+            var paths=ShowDiscovery.RandomSample(VideoSelection.DiscoveryCandidates(workspace));
             if(paths.Count==0)throw new InvalidOperationException("No supported videos were found in this folder.");
             workspace.DiscoveryFiles=paths;workspaces.Save(workspace);RefreshSelection();
             var provider=SelectedMetadataProvider;var root=workspace.Library;var directory=workspaces.DirectoryFor(workspace);var settings=SaveSettingsCore();

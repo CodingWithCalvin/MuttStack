@@ -20,7 +20,7 @@ public partial class MainWindow : Window
     private bool forceStopRequested;
     public MainWindow() {
         InitializeComponent();outputPath=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"Scout");
-        LoadSettings();workspaces.ReadAll(true);RefreshHistory();ShowPage("Session");Closing+=OnClosing;
+        LoadSettings();workspaces.ReadAll(true);RefreshHistory();ShowPage("Session");Closing+=OnClosing;InitializeInbox();
     }
     private string currentPage="Session";
     private void ShowPage(string name) {
@@ -30,11 +30,14 @@ public partial class MainWindow : Window
         foreach(var item in new[]{(NavLibrary,"Library"),(NavResults,"Results"),(NavPreview,"Preview"),(NavActivity,"Activity")})
             item.Item1.Style=(Style)FindResource(item.Item2==name?"ScoutTabActive":"ScoutTab");
         NavSettings.Style=(Style)FindResource(name=="Settings"?"NavActive":"NavButton");
-        ScoutHeader.Visibility=name=="Settings"?Visibility.Collapsed:Visibility.Visible;
+        ScoutHeader.Visibility=name is "Settings" or "Inbox"?Visibility.Collapsed:Visibility.Visible;
         ScoutTabs.Visibility=ScoutRunControls.Visibility=workspace==null?Visibility.Collapsed:Visibility.Visible;
         ScoutWelcome.Visibility=workspace==null?Visibility.Visible:Visibility.Collapsed;
         SessionPage.Visibility=name=="Session"?Visibility.Visible:Visibility.Collapsed;
         SettingsPage.Visibility=name=="Settings"?Visibility.Visible:Visibility.Collapsed;
+        InboxPage.Visibility=name=="Inbox"?Visibility.Visible:Visibility.Collapsed;
+        NavInbox.Style=(Style)FindResource(name=="Inbox"?"NavActive":"NavButton");
+        if(name=="Inbox")RefreshInbox();
         LibraryPage.Visibility=name=="Library"?Visibility.Visible:Visibility.Collapsed;
         ResultsPage.Visibility=name=="Results"?Visibility.Visible:Visibility.Collapsed;
         PreviewPage.Visibility=name=="Preview"?Visibility.Visible:Visibility.Collapsed;

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net11.0-windows</TargetFramework></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../Scout.Core/Scout.Core.csproj" /></ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../../Tucker/src/Tucker/ScoutOutbox.cs" Link="Tucker/ScoutOutbox.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/AppStorage.cs" Link="Tucker/AppStorage.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/RunPlanner.cs" Link="Tucker/RunPlanner.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/RunNames.cs" Link="Tucker/RunNames.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/FileNames.cs" Link="Tucker/FileNames.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/RawRip.cs" Link="Tucker/RawRip.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/Engine.cs" Link="Tucker/Engine.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/Disc.cs" Link="Tucker/Disc.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/RipQueue.cs" Link="Tucker/RipQueue.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/Presets.cs" Link="Tucker/Presets.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/QueueStore.cs" Link="Tucker/QueueStore.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/Tvdb.cs" Link="Tucker/Tvdb.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/FolderNames.cs" Link="Tucker/FolderNames.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/DiscLabelHints.cs" Link="Tucker/DiscLabelHints.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/DoggoDatabase.cs" Link="Tucker/DoggoDatabase.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/QueueManager.cs" Link="Tucker/QueueManager.cs" />
+    <Compile Include="../../../Tucker/src/Tucker/Naming.cs" Link="Tucker/Naming.cs" />
+  </ItemGroup>
+</Project>

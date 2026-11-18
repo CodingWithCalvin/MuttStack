@@ -1,6 +1,8 @@
 namespace Scout.Core;
 public static class VideoSelection
 {
+    public static List<string> DiscoveryCandidates(RunWorkspace run)=>run.SourceHandoffId.Length>0
+        ?ValidateSaved(run.Library,run.SelectedFiles):Enumerate(run.Library);
     public static List<string> ValidateSaved(string root,IReadOnlyList<string> selected) {
         if(selected.Count==0)throw new InvalidOperationException("Choose at least one video.");
         var paths=selected.Select(Path.GetFullPath).ToList();

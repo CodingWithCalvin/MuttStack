@@ -7,6 +7,7 @@ public sealed record ScoutSetup {
  public string? CandidateKey {get;set;}
 }
 public sealed class RunWorkspace {
+ public string SourceHandoffId {get;set;}="";
  public ScoutSetup? Setup {get;set;}
  public ScoutSetup RestoreSetup()=>Setup??=new ScoutSetup {
   Mode=Events.Any(e=>e.Contains("Show discovery inspected",StringComparison.Ordinal))?"discover":"known",
@@ -35,6 +36,7 @@ public sealed class RunWorkspace {
  public string Label=>$"{Updated:MMM d, HH:mm}  ·  {Status}  ·  {Id[..6]}";
 }
 public sealed class WorkspaceStore(string root) {
+ public string Root=>Path.GetFullPath(root);
  public RunWorkspace CreateRun(string library) {
   library=Path.GetFullPath(library);
   if(!Directory.Exists(library))throw new DirectoryNotFoundException("The selected source folder is unavailable. Reconnect the drive or choose another folder.");

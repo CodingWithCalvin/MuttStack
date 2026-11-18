@@ -279,6 +279,7 @@ SeasonPreviewTests.Run(Test,temp);
 ResolutionTests.Run(Test,temp);
 DatabaseTests.Run(Test,temp);
 DoggoTests.Run(Test,temp);
+HandoffTests.Run(Test,temp);
 ContextBatchTests.Run(Test);
 RuntimeTests.Run(Test,temp);
 SettingsTests.Run(Test,temp);

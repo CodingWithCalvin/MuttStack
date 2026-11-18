@@ -5,7 +5,7 @@ namespace Scout.Core;
 
 // Logical artifact paths preserve imports and old checkpoint references; managed paths
 // are database keys, never loose files. Media/model paths are outside these roots.
-public sealed class ScoutDatabase {
+public sealed partial class ScoutDatabase {
  readonly string documents;readonly string results;
  public bool UsesDoggo {get;}
  readonly string connectionString;

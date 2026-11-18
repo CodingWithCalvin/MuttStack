@@ -2,7 +2,8 @@ using Microsoft.Data.Sqlite;
 namespace Scout.Core;
 
 // Prefixes are ownership conventions. Scout consumes doggo infrastructure only;
-// it neither consumes the current Tucker-only handoff contract nor migrates peers.
+// it leaves the legacy Ripley-to-Tucker channel and peer migrations alone.
+// ScoutInbox separately initializes the recipient-aware handoff channel.
 public static class DoggoSchema {
  public static string DefaultPath=>System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Doggo","doggo.db");
  internal static void Initialize(SqliteConnection db) {

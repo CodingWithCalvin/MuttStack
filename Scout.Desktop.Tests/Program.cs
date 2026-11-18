@@ -200,6 +200,7 @@ internal static class Program
             }
             Console.WriteLine("PASS Force stop is limited to resumable identification work.");
             window.Close();
+            InboxDesktopTests.Run(root);
             app.Shutdown();
             return 0;
         }
