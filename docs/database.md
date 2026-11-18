@@ -1,0 +1,21 @@
+# Doggo storage — Tucker implementation
+
+One local SQLite file, WAL mode, foreign keys, synchronous FULL and a bounded busy timeout. Work runs outside database transactions. Prefixes are ownership conventions, not security boundaries. Windows file permissions protect access.
+
+| Component | Tables |
+| --- | --- |
+| doggo | `doggo_migrations(component, version, applied_utc)` |
+| handoff | `handoff_batches(id, digest, payload, status, offered_utc, accepted_utc)`, `handoff_events` |
+| tucker | `tucker_jobs`, `tucker_imported_sources`, `tucker_receipts`, `tucker_presets`, `tucker_settings`, `tucker_archived_runs` |
+
+Initialization and migration version checks execute under BEGIN IMMEDIATE. Doggo and handoff remain at version 1. Tucker version 2 adds `tucker_archived_runs(run_id)` without rewriting existing jobs, settings, presets or receipts. Initialization installs versions 1 and 2 transactionally, and existing version 1 databases receive the additive archive table on startup. Versions newer than each supported component cause a safe refusal; unrelated app versions do not block Tucker. Later migrations must be ordered, component-specific and additive where possible. Do not modify deployed DDL to evolve databases; introduce a new component version.
+
+Archive and restore persist run IDs with the job state in one transaction. Archived jobs are excluded from processing until restored. Deleting a run removes its job rows and archive entry only; imported-source signatures, receipts, shared handoff events and media stay intact. Archive/delete changes preserve references to any unrelated active job, and the manager rejects changes to runs with active or scheduled files. A failed save is not adopted in memory.
+
+The acceptance transaction writes Tucker's jobs and deduplication ledger, inserts its unique receipt, conditionally changes Offered to Accepted and records acceptance. A stale/declined/changed handoff rolls back all those changes. Accepting does not schedule an encode. Frozen preset JSON is committed before acceptance and is independently retained in tucker_presets. Exported CLI preset files can be recreated from it.
+
+Jobs use typed identity/order/queue columns and a versioned application payload. This keeps the initial extraction small while avoiding reliance on another application's private schema. Tucker serializes its own writers through one desktop instance; other apps must never update tucker tables directly. The shared protocol API is the Doggo.Handoffs library, referenced by Ripley and Tucker. Published apps include independent copies.
+
+Ripley now owns `ripley_completed_sources` and `ripley_reconciliations` (component version 1), storing verified historical completion evidence. Tucker reads that published completion ledger to prevent duplicate imports. Ripley preferences and operational history remain in its existing JSON store for this staged cutover; only completion annotations and handoff status are added. Full Ripley history migration and all Scout migration remain deferred. A future coordinated cutover must back up via SQLite's backup API, preserve Scout's virtual document keys and DPAPI credential bytes, migrate idle Ripley state explicitly, and update the read-only credential integration. Do not combine old and new writers until compatibility is established. Backing up only doggo.db while a live WAL exists is not a valid backup procedure.
+
+No service, machine-wide installer, network database, uninstaller, schema-permission system or automated cross-app update coordinator is included. This is a per-Windows-user local library.

@@ -1,0 +1,7 @@
+Built-in imagegen; transparent PNG. Final master is Tucker-master.png. Generate-Icon.ps1 derives the application PNG and multi-resolution ICO without redrawing.
+
+Initial prompt: Friendly amber/copper smooth-haired dachshund head and shoulders, very long drooping ears, characteristic long narrow muzzle, warm clever eyes, amber neckerchief. Polished illustrated dog app icon, bold dark outlines, clean dimensional shading. Centered isolated portrait with transparent margins, no lettering or background.
+
+Edit 1: Preserve dog and illustration; add a round golden amber collar tag below the neckerchief with exact dark text 'Tucker'. Preserve transparency.
+
+Final edit: Add a jaunty copper brown flat cap in the same illustrated dog app icon style. Preserve the dachshund, long ears, amber neckerchief, round gold tag reading 'Tucker', colors and transparency. Keep the complete cap and portrait within the canvas.
