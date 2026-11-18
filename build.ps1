@@ -8,6 +8,10 @@ Push-Location $PSScriptRoot
 try {
     & $DotnetPath run --project Scout.Tests -c Release
     if ($LASTEXITCODE -ne 0) { throw "Tests failed" }
+    & $DotnetPath run --project Scout.Desktop.Tests -c Release
+    if ($LASTEXITCODE -ne 0) { throw "Desktop startup checks failed" }
     & $DotnetPath publish Scout.Desktop -c Release -r win-x64 --self-contained true -o artifacts/win-x64 --nologo -m:1
     if ($LASTEXITCODE -ne 0) { throw "Publish failed" }
+    & $DotnetPath run --project Scout.Desktop.Tests -c Release --no-build -- --app-directory (Join-Path $PSScriptRoot "artifacts/win-x64")
+    if ($LASTEXITCODE -ne 0) { throw "Published app startup checks failed" }
 } finally { Pop-Location }

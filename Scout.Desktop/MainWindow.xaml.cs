@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private string? reportPath,previewHtml;
     private CancellationTokenSource? operation;
     private ScoutPause? pauseRequest;
+    private bool forceStopRequested;
     public MainWindow() {
         InitializeComponent();outputPath=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"Scout");
         LoadSettings();workspaces.ReadAll(true);RefreshHistory();ShowPage("Session");Closing+=OnClosing;
@@ -93,6 +94,7 @@ public partial class MainWindow : Window
     private void SearchChanged(object sender,TextChangedEventArgs e)=>FilterRows();
     private void ClearEvidence() {
         Evidence.Document.Blocks.Clear();EvidenceAssessment.Text="Select a recording to review";EvidenceSuggestion.Text="";EvidenceFilename.Text="";EvidenceFilename.ToolTip=null;
+        RefreshResolutionActions();
     }
     private void ResultSelected(object sender,SelectionChangedEventArgs e) {
         if(Evidence==null)return;ClearEvidence();
@@ -126,13 +128,13 @@ public partial class MainWindow : Window
     private void SetBusy(bool value) {
         RestartRunButton.IsEnabled=!value;DeleteRunButton.IsEnabled=!value;UndoDeleteButton.IsEnabled=!value;HistoryList.IsEnabled=!value;SettingsTabs.IsEnabled=!value;SettingsSaveButton.IsEnabled=!value;LibraryPage.IsEnabled=!value;
         CancelButton.IsEnabled=value;Progress.IsIndeterminate=value;Progress.Visibility=value?Visibility.Visible:Visibility.Collapsed;
-        RefreshScoutActions();RefreshMoveSelection();
+        RefreshScoutActions();RefreshMoveSelection();RefreshResolutionActions();
         ProcessingActionText.Text=pauseRequest==null?"Cancel processing":"Pause Scout";
         System.Windows.Automation.AutomationProperties.SetName(CancelButton,ProcessingActionText.Text);
         if(value||workspace?.Status!="Paused")PauseNotice.Visibility=Visibility.Collapsed;
         if(!value)OpenPendingTaskbarScout();
     }
-    private void Log(string line){ActivityLog.AppendText(line+Environment.NewLine);ActivityLog.ScrollToEnd();Status.Text=pauseRequest?.IsRequested==true?"Pause requested — finishing and saving the current file.":line;RecordEvent(line);}
+    private void Log(string line){ActivityLog.AppendText(line+Environment.NewLine);ActivityLog.ScrollToEnd();Status.Text=forceStopRequested?"Force stop requested — cancelling current work and saving progress.":pauseRequest?.IsRequested==true?"Pause requested — finishing and saving the current file.":line;RecordEvent(line);}
     private async void Identify(object sender,RoutedEventArgs e)=>await IdentifyRunAsync(false);
     private async void RestartRun(object sender,RoutedEventArgs e)=>await IdentifyRunAsync(true);
     private async void ReanalyzeScout(object sender,RoutedEventArgs e)=>await IdentifyRunAsync(true,true);
@@ -144,9 +146,9 @@ public partial class MainWindow : Window
         try {
             if(restart&&(workspace==null||string.IsNullOrWhiteSpace(workspace.Model)))throw new InvalidOperationException("Resume Scout is available for saved dialogue-identification runs. Use Identify episodes to start a new Scout.");
             var preferences=SaveSettingsCore();
-            if(string.IsNullOrWhiteSpace(preferences.Model))throw new ArgumentException("Choose a model ID in Settings.");
+            if(!preferences.UseSubtitleMatching&&string.IsNullOrWhiteSpace(preferences.Model))throw new ArgumentException("Choose a model ID in Settings.");
             string? key=preferences.Provider is "openai" or "compatible"?settingsStore.ReadKey(preferences.CredentialId):null;
-            ConnectionPolicy.Validate(preferences.Provider,preferences.Endpoint,preferences.AllowCloudDialogue,key);
+            if(!preferences.UseSubtitleMatching)ConnectionPolicy.Validate(preferences.Provider,preferences.Endpoint,preferences.AllowCloudDialogue,key);
             if(workspace==null)throw new ArgumentException("Create or select a Scout first.");
             if(!ScoutStorage.Exists(catalogPath)&&workspace.SeriesIdentity==null)throw new ArgumentException("Select a show or import an episode guide before identifying episodes.");
             if(!Directory.Exists(LibraryPath.Text)||PreviewPlanner.Within(outputPath,LibraryPath.Text))throw new ArgumentException("The source folder must exist and must be separate from internal Scout storage.");
@@ -154,13 +156,16 @@ public partial class MainWindow : Window
             var selectedFiles=restart?workspace.SelectedFiles.ToList():ChooseVideos();if(selectedFiles==null)return;
             if(selectedFiles.Count==0)throw new InvalidOperationException("This Scout has no saved file selection. Use Identify episodes to start a new Scout.");
             if(restart){outputPath=workspaces.DirectoryFor(workspace!);catalogPath=workspace!.Catalog;dialoguePath=workspace.Dialogue;LibraryPath.Text=workspace.Library;}
-            workspace!.SelectedFiles=selectedFiles;SaveDraft();workspace.Report=Path.Combine(outputPath,"report.json");workspace.Preview="";previewHtml=null;PreviewGrid.ItemsSource=null;workspace.Status="Running";workspace.Model=preferences.Model;workspace.Provider=preferences.Provider;
-            pauseRequest=new();operation=new();SetBusy(true);ShowPage("Activity");var progress=new Progress<string>(Log);var token=operation.Token;
+            workspace!.SelectedFiles=selectedFiles;SaveDraft();workspace.Report=Path.Combine(outputPath,"report.json");workspace.Preview="";previewHtml=null;PreviewGrid.ItemsSource=null;workspace.Status="Running";workspace.Model=string.IsNullOrWhiteSpace(preferences.Model)?"Subtitle matching":preferences.Model;workspace.Provider=preferences.Provider;
+            forceStopRequested=false;pauseRequest=new();operation=new();SetBusy(true);ShowPage("Activity");var progress=new Progress<string>(Log);var token=operation.Token;
             var guideTarget=ScoutStorage.Exists(catalogPath)?catalogPath:Path.Combine(outputPath,"catalog.json");
             using(var metadataHttp=MetadataHttp()) {
                 var identity=workspace.SeriesIdentity;
                 if(!ScoutStorage.Exists(guideTarget))Log("Downloading the episode guide for "+identity!.Label+"…");
-                await EpisodeGuidePreparation.EnsureAsync(guideTarget,identity,identity==null?null:CatalogClient(metadataHttp,identity.Provider),token);
+                Log("Checking the episode guide and retrieving missing descriptions…");
+                var guide=await EpisodeGuidePreparation.EnsureAsync(guideTarget,identity,identity==null?null:CatalogClient(metadataHttp,identity.Provider),token);
+                var missing=guide.Where(e=>string.IsNullOrWhiteSpace(e.Overview)).ToList();
+                if(missing.Count>0)Log($"{missing.Count} guide entries still lack descriptions. AI suggestions for those entries may be held; subtitle matching can use their provider titles.");
             }
             catalogPath=workspaces.SaveCatalog(workspace,guideTarget);
             Log(newFilesOnly?"Scanning for added videos; saved results will be retained.":reviewIssues?"Reviewing unresolved files and competing recordings using saved evidence.":reanalyze?$"Reanalyzing {selectedFiles.Count} videos with the current model; reusing unchanged dialogue and fingerprints.":restart?$"Resuming {selectedFiles.Count} selected videos; reusing successful results for unchanged files.":$"Identifying {selectedFiles.Count} selected videos from dialogue.");
@@ -168,30 +173,38 @@ public partial class MainWindow : Window
             Log($"Model request timeout: {preferences.EffectiveTimeoutSeconds/60.0:0.#} minutes per request. Timeouts are held for retry; they do not cancel the Scout.");
             var root=LibraryPath.Text;var catalog=catalogPath;var output=outputPath;
             var dialogue=string.IsNullOrWhiteSpace(dialoguePath)?null:dialoguePath;
-            if(preferences.Provider=="managed") {
-                if(!File.Exists(preferences.ModelFile)&&preferences.AutoDownloadMissing) {
-                    var profile=ModelDownloads.Profiles.Single(p=>p.Id==preferences.DownloadProfile);
-                    using var downloadHttp=new HttpClient{Timeout=TimeSpan.FromHours(12)};
-                    preferences.ModelFile=await ModelDownloads.DownloadAsync(profile,preferences,downloadHttp,progress,token);
-                    ModelFileEntry.Text=preferences.ModelFile;
+            bool aiReady=false;
+            async Task EnsureAi(CancellationToken ct) {
+                if(aiReady)return;
+                ct.ThrowIfCancellationRequested();((IProgress<string>)progress).Report("AI is needed for unresolved dialogue; preparing the configured model…");
+                if(preferences.Provider=="managed") {
+                    if(!File.Exists(preferences.ModelFile)&&preferences.AutoDownloadMissing) {
+                        var profile=ModelDownloads.Profiles.Single(p=>p.Id==preferences.DownloadProfile);
+                        using var downloadHttp=new HttpClient{Timeout=TimeSpan.FromHours(12)};
+                        preferences.ModelFile=await ModelDownloads.DownloadAsync(profile,preferences,downloadHttp,progress,ct);
+                        await Dispatcher.InvokeAsync(()=>ModelFileEntry.Text=preferences.ModelFile);
+                    }
+                    runtime=await LocalRuntime.StartAsync(preferences,progress,ct);
                 }
-                runtime=await LocalRuntime.StartAsync(preferences,progress,token);
+                aiReady=true;
             }
             string endpoint=preferences.Provider=="managed"?$"http://127.0.0.1:{new Uri(preferences.LocalEndpoint).Port}/v1/chat/completions":preferences.Endpoint;
-            var settings=new MatchSettings(root,catalog,output,preferences.Model,endpoint,preferences.Ffmpeg,preferences.Ffprobe,dialogue,selectedFiles,workspace.SeriesIdentity,restart,reanalyze,reviewIssues,newFilesOnly);
+            var settings=new MatchSettings(root,catalog,output,preferences.Model,endpoint,preferences.Ffmpeg,preferences.Ffprobe,dialogue,selectedFiles,workspace.SeriesIdentity,restart,reanalyze,reviewIssues,newFilesOnly,workspace.SelectionScope);
             using var handler=new HttpClientHandler {AllowAutoRedirect=false};
             using var http=new HttpClient(handler){Timeout=TimeSpan.FromSeconds(preferences.EffectiveTimeoutSeconds)};
-            matcher=new DialogueMatcher(http,preferences.Inference(key));
+            matcher=new DialogueMatcher(http,preferences.Inference(key),EnsureAi);
             usageOutput=Path.Combine(output,"usage.json");
-            var pipeline=new MediaPipeline(matcher);
+            Scout.Core.Subtitles.SubtitleMatcher? subtitleMatcher=null;
+            if(preferences.UseSubtitleMatching) {
+                var subtitleCache=Path.Combine(Environment.GetEnvironmentVariable("SCOUT_SETTINGS")??Path.Combine(SettingsStore.DefaultDirectory,"UI-Trial"),"SubtitleCache");
+                var source=new Scout.Core.Subtitles.SubdlReferences(subtitleCache,settingsStore.ReadKey(SubtitleCredentials.Subdl),workspace.SeriesIdentity?.Provider=="tmdb"?settingsStore.ReadKey("metadata|tmdb"):null);
+                subtitleMatcher=new(source,subtitleCache);
+            }
+            var pipeline=new MediaPipeline(matcher,subtitles:subtitleMatcher);
             var path=await Task.Run(()=>pipeline.RunAsync(settings,progress,token,pauseRequest),token);
             LoadReport(path);ShowPage("Results");Status.Text="Matching complete. Unresolved files are held for review.";
-        }catch(ScoutPausedException){
-            if(workspace!=null)workspace.Status="Paused";
-            PauseNotice.Text="Scout paused. Progress is saved. Choose Resume Scout to continue.";PauseNotice.Visibility=Visibility.Visible;
-            Log("Scout paused at a saved checkpoint. Resume Scout will reuse completed results.");
-            Status.Text=PauseNotice.Text;
-        }catch(OperationCanceledException) when(operation?.IsCancellationRequested==true){if(workspace!=null)workspace.Status="Cancelled";Log("Cancelled by request. Completed results remain saved; videos are untouched.");}
+        }catch(ScoutPausedException){FinishPaused(forceStopRequested);}
+        catch(OperationCanceledException) when(operation?.IsCancellationRequested==true){FinishPaused(true);}
         catch(OperationCanceledException ex){if(workspace!=null)workspace.Status="Needs attention";var failure=new IOException("A background request was interrupted without a user cancellation. Saved progress is retained; choose Resume Scout to retry unfinished files.",ex);RecordEvent(failure.Message);Error(failure);}
         catch(Exception ex){if(workspace!=null){workspace.Status="Needs attention";RecordEvent(ex.Message);}Error(ex);}
         finally{
@@ -200,7 +213,8 @@ public partial class MainWindow : Window
                 var usage=matcher.Usage;UsageText.Text=$"{usage.Requests} requests · {usage.InputTokens:N0} reported input tokens · {usage.OutputTokens:N0} reported output tokens · {usage.Provider}";
                 if(usageOutput!=null)try{Data.Save(usageOutput,usage);}catch(Exception ex){Log("Could not save usage summary: "+ex.Message);}
             }
-            operation?.Dispose();operation=null;pauseRequest=null;SetBusy(false);RefreshHistory();
+            operation?.Dispose();operation=null;pauseRequest=null;forceStopRequested=false;SetBusy(false);RefreshHistory();
+            if(workspace?.Status=="Paused")Status.Text=PauseNotice.Text;
         }
     }
     private async void GeneratePreview(object sender,RoutedEventArgs e) {
@@ -233,15 +247,29 @@ public partial class MainWindow : Window
         if(RestorePreview()&&previewHtml!=null)try{LaunchPreviewBrowser(ScoutStorage.ExportPreview(previewHtml));}catch(Exception ex){Error(ex);}
     }
     private void Cancel(object sender,RoutedEventArgs e) {
-        if(operation==null)return;
+        if(operation==null||operation.IsCancellationRequested)return;
         if(pauseRequest==null){operation.Cancel();return;}
         pauseRequest.Request();CancelButton.IsEnabled=false;
         PauseNotice.Text="Pause requested. Scout will finish and save the current file (or verification step), then pause. If no file has started, it will pause before the next one.";
         PauseNotice.Visibility=Visibility.Visible;Log("Pause requested — finishing the current file before stopping.");
     }
+    private void ForceStop(object sender,RoutedEventArgs e) {
+        if(operation==null||pauseRequest==null||forceStopRequested)return;
+        forceStopRequested=true;CancelButton.IsEnabled=ForceStopButton.IsEnabled=false;
+        PauseNotice.Text="Force stop requested. Cancelling the current work and saving progress. Resume Scout will retry interrupted or unfinished files.";
+        PauseNotice.Visibility=Visibility.Visible;Log("Force stop requested — cancelling current work now.");
+        operation.Cancel();
+    }
+    private void FinishPaused(bool forced) {
+        if(workspace!=null)workspace.Status="Paused";
+        PauseNotice.Text=forced?"Scout stopped. Completed results are saved. Choose Resume Scout to retry interrupted or unfinished files.":"Scout paused. Progress is saved. Choose Resume Scout to continue.";
+        PauseNotice.Visibility=Visibility.Visible;
+        Log(forced?"Scout stopped by request. Resume Scout will reuse completed results and retry unfinished work.":"Scout paused at a saved checkpoint. Resume Scout will reuse completed results.");
+        Status.Text=PauseNotice.Text;
+    }
     private void OnClosing(object? sender,CancelEventArgs e) {
         if(operation==null)SaveDraft();
-        if(operation!=null){e.Cancel=true;MessageBox.Show(this,pauseRequest==null?"Cancel processing and let it stop before closing.":"Choose Pause Scout and wait for the current file to finish before closing.","Processing is running");}
+        if(operation!=null){e.Cancel=true;MessageBox.Show(this,pauseRequest==null?"Cancel processing and let it stop before closing.":"Choose Pause Scout to finish the current file, or Force stop to cancel it now. Close the app after it confirms that Scout has stopped.","Processing is running");}
     }
     private void Error(Exception ex){
         Status.Text="Needs attention";

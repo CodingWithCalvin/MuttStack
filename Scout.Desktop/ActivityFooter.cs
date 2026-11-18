@@ -34,6 +34,8 @@ public partial class MainWindow {
   System.Windows.Automation.AutomationProperties.SetName(NextStepButton,label);
   NextStepButton.Visibility=busy?Visibility.Collapsed:Visibility.Visible;
   CancelButton.Visibility=busy?Visibility.Visible:Visibility.Collapsed;
+  ForceStopButton.Visibility=busy&&pauseRequest!=null?Visibility.Visible:Visibility.Collapsed;
+  ForceStopButton.IsEnabled=busy&&pauseRequest!=null&&!forceStopRequested&&operation?.IsCancellationRequested!=true;
   RestartRunButton.Visibility=!busy&&resume&&nextStep!="resume"?Visibility.Visible:Visibility.Collapsed;
   ReviewIssuesButton.Visibility=!busy&&review&&nextStep!="review"?Visibility.Visible:Visibility.Collapsed;
   IdentifyNewFilesButton.Visibility=!busy&&reanalyze&&!interrupted?Visibility.Visible:Visibility.Collapsed;

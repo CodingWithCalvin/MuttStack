@@ -8,13 +8,13 @@ public partial class MainWindow {
  private RunWorkspace? workspace;
  private bool openingWorkspace;
  private void RefreshHistory(){
-  var history=workspaces.ReadAll().Where(x=>!string.IsNullOrWhiteSpace(x.Library)).ToList();
+  var history=workspaces.ReadAll(includeArchived:ShowArchivedScouts.IsChecked==true).Where(x=>!string.IsNullOrWhiteSpace(x.Library)).ToList();
   openingWorkspace=true;
   try {
    HistoryList.ItemsSource=history;
    HistoryList.SelectedItem=history.FirstOrDefault(x=>x.Id==workspace?.Id);
   } finally {openingWorkspace=false;}
-  RefreshTaskbarScouts(history);
+  RefreshTaskbarScouts(history.Where(x=>!x.Archived).ToList());
   WorkspaceHeading.Text=workspace?.Name??"Your next Scout";
   WorkspaceSource.Text=workspace?.Library??"One Scout. One source folder. One process.";
   RefreshScoutActions();
@@ -80,21 +80,51 @@ public partial class MainWindow {
   }catch(Exception ex){Error(ex);}finally{openingWorkspace=false;RefreshHistory();}
  }
  private RunWorkspace? deletedRun;
- private void DeleteRun(object sender,RoutedEventArgs e) {
-  if(operation!=null||workspace==null)return;
-  if(MessageBox.Show(this,"Delete this Scout from history?\n\nYou can undo this deletion. Saved data is retained for recovery; source videos are never changed.","Delete Scout",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)!=MessageBoxResult.Yes)return;
+ private void HistoryFilterChanged(object sender,RoutedEventArgs e)=>RefreshHistory();
+ private void HistoryItemLoaded(object sender,RoutedEventArgs e) {
+  if(sender is not ListBoxItem row||row.ContextMenu!=null)return;
+  // Each recycled history container owns its menu. Inline event handlers inside
+  // a Style setter are wired to the wrong control type by the WPF XAML compiler.
+  var menu=new ContextMenu();
+  menu.SetBinding(DataContextProperty,new System.Windows.Data.Binding("PlacementTarget.DataContext"){RelativeSource=System.Windows.Data.RelativeSource.Self});
+  var archive=new MenuItem{Header="Archive"};archive.Click+=ArchiveHistoryScout;
+  var delete=new MenuItem{Header="Delete…"};delete.Click+=DeleteHistoryScout;
+  menu.Items.Add(archive);menu.Items.Add(delete);menu.Opened+=HistoryMenuOpened;
+  row.ContextMenu=menu;
+ }
+ private void HistoryMenuOpened(object sender,RoutedEventArgs e) {
+  if(sender is not ContextMenu menu||menu.DataContext is not RunWorkspace run)return;
+  var archive=(MenuItem)menu.Items[0];archive.Header=run.Archived?"Restore from archive":"Archive";
+  foreach(MenuItem item in menu.Items)item.IsEnabled=operation==null&&run.Status!="Running";
+ }
+ private void ArchiveHistoryScout(object sender,RoutedEventArgs e) {
+  if(operation!=null||(sender as MenuItem)?.DataContext is not RunWorkspace chosen)return;
   try {
-   var removed=workspace;workspaces.DeleteRun(removed);deletedRun=removed;workspace=null;
-   report=null;reportPath=null;previewHtml=null;groups=[];catalogPath="";dialoguePath="";outputPath="";
-   ResultsGrid.ItemsSource=null;PreviewGrid.ItemsSource=null;ClearEvidence();ActivityLog.Clear();SessionLog.Text="";
-   var remaining=workspaces.ReadAll();var next=remaining.FirstOrDefault(x=>string.Equals(x.Library,removed.Library,StringComparison.OrdinalIgnoreCase))??remaining.FirstOrDefault();
-   if(next!=null)OpenSavedRun(next);else {RefreshHistory();ShowPage("Session");}
+   var run=workspace?.Id==chosen.Id?workspace:chosen;SaveDraft();workspaces.ArchiveRun(run,!run.Archived);
+   if(run.Archived&&ShowArchivedScouts.IsChecked!=true)RemoveFromView(run);else RefreshHistory();
+   Status.Text=run.Archived?"Scout archived. Use Show archived to restore it.":"Scout restored from archive.";
+  }catch(Exception ex){Error(ex);}
+ }
+ private void DeleteHistoryScout(object sender,RoutedEventArgs e) {if((sender as MenuItem)?.DataContext is RunWorkspace chosen)DeleteHistory(workspace?.Id==chosen.Id?workspace:chosen);}
+ private void DeleteRun(object sender,RoutedEventArgs e) {if(workspace!=null)DeleteHistory(workspace);}
+ private void DeleteHistory(RunWorkspace run) {
+  if(operation!=null||run.Status=="Running")return;
+  if(MessageBox.Show(this,$"Delete {run.Name} from history?\n\nYou can undo this deletion. Saved data is retained for recovery; source videos are never changed.","Delete Scout",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)!=MessageBoxResult.Yes)return;
+  try {
+   workspaces.DeleteRun(run);deletedRun=run;RemoveFromView(run);
    UndoDeleteButton.Visibility=Visibility.Visible;Status.Text="Scout deleted from history. Source videos unchanged.";
   }catch(Exception ex){Error(ex);}
  }
+ private void RemoveFromView(RunWorkspace removed) {
+  if(workspace?.Id!=removed.Id){RefreshHistory();return;}
+  workspace=null;report=null;reportPath=null;previewHtml=null;groups=[];catalogPath="";dialoguePath="";outputPath="";
+  ResultsGrid.ItemsSource=null;PreviewGrid.ItemsSource=null;ClearEvidence();ActivityLog.Clear();SessionLog.Text="";
+  var remaining=workspaces.ReadAll(includeArchived:ShowArchivedScouts.IsChecked==true);var next=remaining.FirstOrDefault(x=>string.Equals(x.Library,removed.Library,StringComparison.OrdinalIgnoreCase))??remaining.FirstOrDefault();
+  if(next!=null)OpenSavedRun(next);else {RefreshHistory();ShowPage("Session");}
+ }
  private void UndoDelete(object sender,RoutedEventArgs e) {
   if(operation!=null||deletedRun==null)return;
-  try {workspaces.RestoreRun(deletedRun);OpenSavedRun(deletedRun);deletedRun=null;UndoDeleteButton.Visibility=Visibility.Collapsed;Status.Text="Scout restored.";}catch(Exception ex){Error(ex);}
+  try {workspaces.RestoreRun(deletedRun);if(deletedRun.Archived)ShowArchivedScouts.IsChecked=true;OpenSavedRun(deletedRun);deletedRun=null;UndoDeleteButton.Visibility=Visibility.Collapsed;Status.Text="Scout restored.";}catch(Exception ex){Error(ex);}
  }
  private void FinishWorkspace(object sender,RoutedEventArgs e) {
   if(operation!=null||workspace==null)return;

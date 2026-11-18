@@ -94,8 +94,9 @@ public partial class MainWindow
   ModelId.Text=appSettings.LocalModel;Endpoint.Text=appSettings.LocalEndpoint;
   OpenAiModelEntry.Text=appSettings.OpenAiModel;CompatibleModelEntry.Text=appSettings.Provider=="local"?appSettings.LocalModel:appSettings.CompatibleModel;CompatibleEndpointEntry.Text=appSettings.Provider=="local"?appSettings.LocalEndpoint:appSettings.CompatibleEndpoint;
   CloudConsent.IsChecked=appSettings.AllowCloudDialogue;ModelFolderEntry.Text=appSettings.ModelDirectory;ModelFileEntry.Text=appSettings.ModelFile;
+  SubtitleMatchingEntry.IsChecked=appSettings.UseSubtitleMatching;
   ThinkingChoice.SelectedIndex=appSettings.ThinkingEnabled switch {true=>1,false=>2,_=>0};
-  ThreadsEntry.Text=appSettings.CpuThreads.ToString();GpuEntry.Text=appSettings.GpuLayers.ToString();ContextEntry.Text=appSettings.ContextSize.ToString();
+  ThreadsEntry.Text=appSettings.CpuThreads.ToString();PromptThreadsEntry.Text=appSettings.PromptThreads.ToString();GpuEntry.Text=appSettings.GpuLayers.ToString();ContextEntry.Text=appSettings.ContextSize.ToString();
   OutputTokensEntry.Text=appSettings.MaxOutputTokens.ToString();TimeoutEntry.Text=appSettings.RequestTimeoutSeconds.ToString();RequestsEntry.Text=appSettings.MaxRequestsPerRun.ToString();
   AllowDownloadsEntry.IsChecked=appSettings.AllowDownloads;AutoDownloadEntry.IsChecked=appSettings.AutoDownloadMissing;ExperimentalEntry.IsChecked=appSettings.AllowExperimental;
   DownloadProfileChoice.ItemsSource=ModelDownloads.Profiles;DownloadProfileChoice.SelectedItem=ModelDownloads.Profiles.FirstOrDefault(p=>p.Id==appSettings.DownloadProfile)??ModelDownloads.Profiles[0];
@@ -128,11 +129,11 @@ public partial class MainWindow
   return new() {
    Naming=DefaultNaming(),MetadataProvider=SelectedMetadataProvider,
    Provider=SelectedProvider,LocalModel=SelectedProvider=="local"?CompatibleModelEntry.Text.Trim():ModelId.Text.Trim(),LocalEndpoint=SelectedProvider=="local"?CompatibleEndpointEntry.Text.Trim():Endpoint.Text.Trim(),OpenAiModel=OpenAiModelEntry.Text.Trim(),
-   CompatibleModel=CompatibleModelEntry.Text.Trim(),CompatibleEndpoint=CompatibleEndpointEntry.Text.Trim(),AllowCloudDialogue=CloudConsent.IsChecked==true,
+   CompatibleModel=CompatibleModelEntry.Text.Trim(),CompatibleEndpoint=CompatibleEndpointEntry.Text.Trim(),AllowCloudDialogue=CloudConsent.IsChecked==true,UseSubtitleMatching=SubtitleMatchingEntry.IsChecked==true,
    ModelDirectory=ModelFolderEntry.Text.Trim(),ModelFile=ModelFileEntry.Text.Trim(),
    AllowDownloads=AllowDownloadsEntry.IsChecked==true,AutoDownloadMissing=AutoDownloadEntry.IsChecked==true,AllowExperimental=ExperimentalEntry.IsChecked==true,
    ThinkingEnabled=SelectedThinking,
-   CpuThreads=Number(ThreadsEntry,"CPU threads"),GpuLayers=Number(GpuEntry,"GPU layers"),ContextSize=Number(ContextEntry,"Context tokens"),
+   CpuThreads=Number(ThreadsEntry,"Generation threads"),PromptThreads=Number(PromptThreadsEntry,"Prompt threads"),GpuLayers=Number(GpuEntry,"GPU layers"),ContextSize=Number(ContextEntry,"Context tokens"),
    MaxOutputTokens=Number(OutputTokensEntry,"Output token limit"),RequestTimeoutSeconds=Number(TimeoutEntry,"Request timeout"),MaxRequestsPerRun=Number(RequestsEntry,"Request limit"),
    Ffmpeg=FfmpegEntry.Text.Trim(),Ffprobe=FfprobeEntry.Text.Trim(),DownloadProfile=(DownloadProfileChoice.SelectedItem as ModelProfile)?.Id??"qwen36-35b"
   };
@@ -142,12 +143,13 @@ public partial class MainWindow
   if(!string.IsNullOrWhiteSpace(CompatibleKeyEntry.Password))ConnectionPolicy.CloudUri(settings.CompatibleEndpoint);
   if(!string.IsNullOrWhiteSpace(OpenAiKeyEntry.Password))settingsStore.SetKey("openai|https://api.openai.com/v1/responses",OpenAiKeyEntry.Password.Trim());
   if(!string.IsNullOrWhiteSpace(CompatibleKeyEntry.Password))settingsStore.SetKey("compatible|"+settings.CompatibleEndpoint.TrimEnd('/'),CompatibleKeyEntry.Password.Trim());
-  SaveMetadataKeys();settingsStore.Save(settings);
+  SaveMetadataKeys();SaveSubtitleKey();settingsStore.Save(settings);
   appSettings=settings;if(report!=null)RestorePreview();OpenAiKeyEntry.Clear();CompatibleKeyEntry.Clear();RefreshKeyStatus();UpdateConnectionSummary();
   SettingsStatus.Text="Settings saved. Keys are protected for this Windows account.";return settings;
  }
  private void SaveSettings(object sender,RoutedEventArgs e){if(operation==null)try{SaveSettingsCore();}catch(Exception ex){Error(ex);}}
  private void RefreshKeyStatus() {
+  RefreshSubdlKeyStatus();
   RefreshMetadataKeyStatus();
   try{
    OpenAiKeyStatus.Text=settingsStore.ReadKey("openai|https://api.openai.com/v1/responses") is null?"No key saved.":"A key is saved for OpenAI.";

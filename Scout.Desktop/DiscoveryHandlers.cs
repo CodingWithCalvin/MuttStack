@@ -35,9 +35,10 @@ public partial class MainWindow
     private static HttpClient MetadataHttp()=>new(new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(60)};
     private List<string>? ChooseVideos() {
         if(workspace==null)throw new InvalidOperationException("Create or select a Scout first.");
-        var picker=new VideoSelectionWindow(workspace.Library,workspace.SelectedFiles){Owner=this,Title="Choose episodes to identify"};
+        var picker=new VideoSelectionWindow(workspace.Library,workspace.SelectedFiles,workspace.SelectionScope){Owner=this,Title="Choose episodes to identify"};
         if(picker.ShowDialog()!=true)return null;
         var paths=VideoSelection.ValidateSaved(workspace.Library,picker.SelectedFiles);
+        workspace.SelectionScope=picker.SelectedScope;
         if(workspace.Status=="Draft"){workspace.SelectedFiles=paths;workspaces.Save(workspace);RefreshSelection();}
         return paths;
     }

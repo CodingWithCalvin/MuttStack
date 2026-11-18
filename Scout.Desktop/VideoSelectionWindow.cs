@@ -16,8 +16,9 @@ public sealed class VideoSelectionWindow:Window
     private readonly TextBlock count=new(){Margin=new Thickness(0,10,0,10)};
     private readonly Button start=new(){Content="Use this selection",HorizontalAlignment=HorizontalAlignment.Right};
     public List<string> SelectedFiles {get;private set;}=[];
+    public IdentificationScope SelectedScope {get;private set;}=new();
     private sealed record Entry(string Path,string Label);
-    public VideoSelectionWindow(string root,IReadOnlyList<string>? selected=null) {
+    public VideoSelectionWindow(string root,IReadOnlyList<string>? selected=null,IdentificationScope? savedScope=null) {
         Title="Choose episodes to identify";Width=820;Height=640;MinWidth=600;MinHeight=440;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         Background=(System.Windows.Media.Brush)Application.Current.FindResource("CanvasBrush");
         Foreground=System.Windows.Media.Brushes.White;
@@ -40,8 +41,12 @@ public sealed class VideoSelectionWindow:Window
             if(scopeIndex==0)videos.SelectedItem=saved.FirstOrDefault();
             else {videos.SelectedItems.Clear();foreach(var entry in saved)videos.SelectedItems.Add(entry);}
         }
+        if(savedScope?.Kind=="show") {scopeIndex=2;((RadioButton)scope.Children[scopeIndex]).IsChecked=true;}
+        else if(savedScope?.Kind=="season"&&seasons.Items.Cast<Entry>().FirstOrDefault(e=>string.Equals(e.Path,savedScope.Folder,StringComparison.OrdinalIgnoreCase)) is {} savedSeason) {
+            seasons.SelectedItem=savedSeason;scopeIndex=1;((RadioButton)scope.Children[scopeIndex]).IsChecked=true;
+        }
         seasons.SelectionChanged+=(_,_)=>Refresh();videos.SelectionChanged+=(_,_)=>Refresh();
-        start.Click+=(_,_)=>{SelectedFiles=Selection();if(SelectedFiles.Count>0)DialogResult=true;};Refresh();
+        start.Click+=(_,_)=>{SelectedFiles=Selection();SelectedScope=scopeIndex switch {1=>new("season",(seasons.SelectedItem as Entry)?.Path),2=>new("show"),_=>new("files")};if(SelectedFiles.Count>0)DialogResult=true;};Refresh();
     }
     private List<string> Selection()=>VideoSelection.Scope(files,scopeIndex switch{0=>"episode",1=>"season",2=>"show",_=>"selected"},(videos.SelectedItem as Entry)?.Path,(seasons.SelectedItem as Entry)?.Path,videos.SelectedItems.Cast<Entry>().Select(e=>e.Path).ToList());
     private void Refresh() {

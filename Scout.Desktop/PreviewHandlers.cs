@@ -63,7 +63,7 @@ public partial class MainWindow {
   foreach(var row in rows)row.Selected=selected.Contains(row.Item.Source);
   PreviewGrid.ItemsSource=rows;RefreshMoveSelection();
   PreviewSummary.Text=string.Join("   /   ",plan.Items.GroupBy(i=>i.Action=="completed"?"Completed":i.Action=="rename/move"?"Pending":i.Action=="hold"?"Held":"Unchanged").Select(g=>$"{g.Count()} {g.Key}"))+"   ·   Only checked files are moved";
-  PreviewDetails.Text=string.Join(Environment.NewLine,plan.NotIdentified.Select(ep=>"Not identified: "+ep.Code+" — "+ep.Title));
+  PreviewDetails.Text=plan.CoverageNote+Environment.NewLine+string.Join(Environment.NewLine,plan.NotIdentified.Select(ep=>"Not identified in selected scope: "+ep.Code+" — "+ep.Title));
  }
  private bool RestorePreview() {
   if(report==null||workspace==null||string.IsNullOrWhiteSpace(outputPath))return false;
