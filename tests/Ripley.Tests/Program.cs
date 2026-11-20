@@ -156,9 +156,16 @@ try {
   var flowName=await Engine.Encode(flowJob,flowOptions,_=>{},CancellationToken.None);
   Check(flowName=="2_5_title_t00.mp4"&&File.ReadAllText(flowJob.Source)=="test raw content"&&File.ReadAllText(Path.Combine(flowOptions.Output,flowName))=="test encoded content","Rip-to-compression workflow preserves raw data and requested filenames");
   Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","partial");var partial=Disc.NewFolder(temp,"PARTIAL");rejected=false;try{await Disc.Rip(fake,"disc:0",120,partial,_=>{},CancellationToken.None);}catch(IOException){rejected=true;}Check(rejected&&File.Exists(Path.Combine(partial,"title_t00.mkv")),"Partial rip retained but rejected for compression");
-  Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","wait");var waiting=Disc.NewFolder(temp,"WAITING");using var stop=new CancellationTokenSource();var ripping=Disc.Rip(fake,"disc:0",120,waiting,_=>{},stop.Token);
-  var encode=Engine.Scan([b],output,true,".mkv").Single();var encoded=await Engine.Encode(encode,new Options(fake,"test","",false,output,".mkv"),_=>{},CancellationToken.None);Check(!ripping.IsCompleted&&File.Exists(Path.Combine(output,encoded)),"Compression completes while another rip is active");
-  stop.Cancel();rejected=false;try{await ripping;}catch(OperationCanceledException){rejected=true;}Check(rejected&&File.Exists(Path.Combine(waiting,"title_t00.mkv")),"Cancelling rip preserves raw files");Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);
+  Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","wait");var waiting=Disc.NewFolder(temp,"WAITING");using var stop=new CancellationTokenSource();
+  var ripStarted=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+  var ripping=Disc.Rip(fake,"disc:0",120,waiting,line=>{if(line.StartsWith("PRGV:"))ripStarted.TrySetResult();},stop.Token);
+  try {
+   // The fake emits progress only after creating its raw file. Process startup order varies on CI.
+   await ripStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+   var encode=Engine.Scan([b],output,true,".mkv").Single();var encoded=await Engine.Encode(encode,new Options(fake,"test","",false,output,".mkv"),_=>{},CancellationToken.None);Check(!ripping.IsCompleted&&File.Exists(Path.Combine(output,encoded)),"Compression completes while another rip is active");
+   stop.Cancel();rejected=false;try{await ripping;}catch(OperationCanceledException){rejected=true;}Check(rejected&&File.Exists(Path.Combine(waiting,"title_t00.mkv")),"Cancelling rip preserves raw files");
+  } finally {stop.Cancel();try{await ripping;}catch(OperationCanceledException){}Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);}
+
  }
  if(args.Length>2){
   var presets=Presets.Load(args[2]);var actual=Presets.Snapshot(args[2],presets[0],Path.GetFullPath(args[1]),output,temp,"nvdec");await Presets.Validate(actual,CancellationToken.None);Check(true,"Installed custom preset imports and NVIDIA decode is detected");

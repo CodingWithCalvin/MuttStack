@@ -13,6 +13,8 @@ if(args.Contains("info")) {
     return;
 }
 if(args.Contains("mkv")) {
+    // Exercise cancellation with a deliberately slower rip-process startup than the encoder.
+    if(Environment.GetEnvironmentVariable("RIPLEY_TEST_MODE")=="wait") await Task.Delay(250);
     var folder=args[^1]; File.WriteAllText(Path.Combine(folder,"title_t00.mkv"),"test raw content");
     Console.WriteLine("PRGT:5024,0,\"Saving all titles to MKV files\"\nMSG:5014,131072,2,\"Saving titles\",\"Saving titles\",\"1\",\"folder\"\nPRGC:5017,0,\"Saving to MKV file\"");
     Console.WriteLine("PRGV:50,50,100");
