@@ -40,20 +40,58 @@ static class SubtitleIntegrationTests {
     var changed=matcher.IdentifyAsync(first,[catalog[0] with {Title="Unrelated Title"},catalog[1]],series,logs,default).GetAwaiter().GetResult();Assert(changed.Result==null&&source.Calls==2);
    }finally{ScoutStorage.Unregister(cache);}
   });
-  test("Subtitle-first pipeline reuses dialogue/fingerprints and sends only unresolved files to AI",()=>{
-   var a=Row("subtitle-pipeline-media","a.mkv",first,'a');var b=Row("subtitle-pipeline-media","b.mkv",Cues("unrelated"),'b');
-   var output=Path.Combine(temp,"subtitle-pipeline-output");var input=Path.Combine(output,"saved.json");var guide=Path.Combine(output,"catalog.json");
+  foreach(bool preflight in new[]{false,true})test($"Subtitle pass saves later matches before the first AI request (preflight={preflight})",()=>{
+   var a=Row("subtitle-pipeline-media-"+preflight,"a.mkv",first,'a');var b=Row("subtitle-pipeline-media-"+preflight,"b.mkv",Cues("unrelated"),'b');a["duration"]=1200.0;
+   var output=Path.Combine(temp,"subtitle-pipeline-output-"+preflight);var input=Path.Combine(output,"saved.json");var guide=Path.Combine(output,"catalog.json");
    Data.Save(input,new{files=new[]{a,b}});Data.Save(guide,new{series_identity=series,episodes=catalog});var before=ScoutStorage.ReadText(input);int starts=0;
    using var handler=new FailingModel();using var http=new HttpClient(handler);
-   var matcher=new DialogueMatcher(http,beforeRequest:_=>{starts++;return Task.CompletedTask;});
+   var matcher=new DialogueMatcher(http,beforeRequest:_=>{starts++;var saved=Data.Read(Path.Combine(output,"report.json")).Array("files").Single(r=>r.Text("path")==a.Text("path"))!.AsObject();Assert(SubtitleResult.Valid(saved,catalog,series),"Later subtitle match must be saved before AI loads");return Task.CompletedTask;});
    var pipeline=new MediaPipeline(matcher,(_,_,_)=>throw new Exception("Saved extraction/fingerprints must be reused"),new SubtitleMatcher(new Source(set),Path.Combine(output,"subtitles")));
-   var settings=new MatchSettings(Path.GetDirectoryName(a.Text("path"))!,guide,output,"test-model","http://127.0.0.1:1234/v1/chat/completions",DialogueInput:input,SelectedFiles:[a.Text("path"),b.Text("path")],SeriesIdentity:series);
-   var report=Data.Read(pipeline.RunAsync(settings,new Progress(),default).GetAwaiter().GetResult());
+   var settings=new MatchSettings(Path.GetDirectoryName(a.Text("path"))!,guide,output,"test-model","http://127.0.0.1:1234/v1/chat/completions",DialogueInput:input,SelectedFiles:[b.Text("path"),a.Text("path")],SeriesIdentity:series,ContentOptions:preflight?new():null);
+   var progress=new Progress();var report=Data.Read(pipeline.RunAsync(settings,progress,default).GetAwaiter().GetResult());
+   Assert(progress.Lines.Any(l=>l.StartsWith("Match found: a.mkv")&&l.Contains("S03E11 — Silver Comet")&&l.Contains("subtitles; collection checks pending")));
+   Assert(progress.Lines.Any(l=>l.StartsWith("Matched: a.mkv")&&l.Contains("collection checks complete"))&&!progress.Lines.Any(l=>l.StartsWith("Matched: b.mkv")));
    Assert(IdentificationScope.Read(report)==new IdentificationScope("files"));
-   var matched=report.Array("files")[0]!.AsObject();Assert(SubtitleResult.Valid(matched,catalog,series)&&RunRecovery.CanReuse(matched,catalog,series));
-   Assert(handler.Requests==1&&starts==1&&report.Array("files")[1].Text("error")!=""&&ScoutStorage.ReadText(input)==before);
+   var matched=report.Array("files").Single(r=>r.Text("path")==a.Text("path"))!.AsObject();Assert(SubtitleResult.Valid(matched,catalog,series)&&RunRecovery.CanReuse(matched,catalog,series));
+   Assert(handler.Requests==1&&starts==1&&report.Array("files").Single(r=>r.Text("path")==b.Text("path")).Text("error")!=""&&ScoutStorage.ReadText(input)==before);
+   Assert(progress.Lines.FindIndex(l=>l.StartsWith("Match found: a.mkv"))<progress.Lines.FindIndex(l=>l.StartsWith("AI fallback [1/1]")));
    Assert(!EvidenceReview.Create(CollectionResolver.Resolve(report).First(g=>g.Episode!=null)).Sections.Any(s=>s.Heading=="Model assessment"));
    var plan=PreviewPlanner.Create(report,settings.Root,series.Name,catalog,identity:series);Assert(plan.Items.Count==2&&File.Exists(a.Text("path"))&&File.Exists(b.Text("path")));
+  });
+  test("Subtitle-only runs retain unmatched dialogue and later issue review preserves successful matches",()=>{
+   var a=Row("subtitle-optional-media","a.mkv",first,'a');var b=Row("subtitle-optional-media","b.mkv",Cues("unrelated"),'b');
+   var output=Path.Combine(temp,"subtitle-optional-output");var input=Path.Combine(output,"input.json");var guide=Path.Combine(output,"catalog.json");
+   Data.Save(input,new{files=new[]{a,b}});Data.Save(guide,new{episodes=catalog});
+   using var handler=new FailingModel();using var http=new HttpClient(handler);int starts=0;
+   var pipeline=new MediaPipeline(new DialogueMatcher(http,beforeRequest:_=>{starts++;return Task.CompletedTask;}),(_,_,_)=>throw new Exception("No extraction expected"),new SubtitleMatcher(new Source(set),Path.Combine(output,"cache")));
+   var settings=new MatchSettings(Path.GetDirectoryName(a.Text("path"))!,guide,output,"","",DialogueInput:input,SelectedFiles:[b.Text("path"),a.Text("path")],SeriesIdentity:series,ContentOptions:new(),UseAiFallback:false);
+   var progress=new Progress();var reportPath=pipeline.RunAsync(settings,progress,default).GetAwaiter().GetResult();var report=Data.Read(reportPath);
+   var matched=report.Array("files").Single(r=>r.Text("path")==a.Text("path"))!.ToJsonString();var held=report.Array("files").Single(r=>r.Text("path")==b.Text("path"))!;
+   Assert(handler.Requests==0&&starts==0&&held.Text("status")=="awaiting_ai"&&held.Text("error")==""&&held["reasoning"]==null&&held.Array("candidates").Count==0);
+   Assert(JsonNode.DeepEquals(held["dialogue"],b["dialogue"])&&IssueReview.Select(report).SetEquals([b.Text("path")]));
+   Assert(progress.Lines.Any(l=>l.Contains("Enable Use AI for unresolved files"))&&progress.Lines.Any(l=>l.StartsWith("Matched: a.mkv")));
+   pipeline.RunAsync(settings with{Restart=true,ReviewIssues=true,UseAiFallback=true,Model="m",Endpoint="http://127.0.0.1:1234/v1/chat/completions"},new Progress(),default).GetAwaiter().GetResult();
+   Assert(handler.Requests==1&&starts==1&&Data.Read(reportPath).Array("files").Single(r=>r.Text("path")==a.Text("path"))!.ToJsonString()==matched);
+  });
+  test("AI-off runs hold competing subtitle claims without loading conflict or claim review models",()=>{
+   var a=Row("subtitle-conflict-off-media","a.mkv",first,'a');var b=Row("subtitle-conflict-off-media","b.mkv",first.Select((c,i)=>i==50?c with{Text=c.Text+" additional distinct words"}:c).ToList(),'b');
+   var output=Path.Combine(temp,"subtitle-conflict-off-output");var input=Path.Combine(output,"input.json");var guide=Path.Combine(output,"catalog.json");Data.Save(input,new{files=new[]{a,b}});Data.Save(guide,new{episodes=catalog});
+   using var handler=new FailingModel();using var http=new HttpClient(handler);int starts=0;
+   var pipeline=new MediaPipeline(new DialogueMatcher(http,beforeRequest:_=>{starts++;return Task.CompletedTask;}),(_,_,_)=>throw new Exception("No extraction expected"),new SubtitleMatcher(new Source(set),Path.Combine(output,"cache")));
+   var settings=new MatchSettings(Path.GetDirectoryName(a.Text("path"))!,guide,output,"","",DialogueInput:input,SelectedFiles:[a.Text("path"),b.Text("path")],SeriesIdentity:series,UseAiFallback:false);
+   var path=pipeline.RunAsync(settings,new Progress(),default).GetAwaiter().GetResult();
+   Assert(CollectionResolver.Resolve(Data.Read(path)).All(g=>g.Status=="unresolved_conflict"&&g.Episode==null),"Initial conflicting matches: "+string.Join("; ",Data.Read(path).Array("files").Select(r=>r.Text("status")+" "+r.Text("error")+" "+r?["subtitle_match"].Text("reason"))));
+   pipeline.RunAsync(settings with{Restart=true,ReviewIssues=true},new Progress(),default).GetAwaiter().GetResult();
+   Assert(handler.Requests==0&&starts==0&&CollectionResolver.Resolve(Data.Read(path)).All(g=>g.Status=="unresolved_conflict"&&g.Episode==null),"Review: "+string.Join("; ",CollectionResolver.Resolve(Data.Read(path)).Select(g=>g.Status))+" starts="+starts);
+  });
+  test("A deferred recording changed before AI is re-read instead of using stale dialogue",()=>{
+   var a=Row("subtitle-changed-media","a.mkv",first,'a');var b=Row("subtitle-changed-media","b.mkv",Cues("unrelated"),'b');
+   var output=Path.Combine(temp,"subtitle-changed-output");var input=Path.Combine(output,"input.json");var guide=Path.Combine(output,"catalog.json");Data.Save(input,new{files=new[]{a,b}});Data.Save(guide,new{episodes=catalog});
+   using var handler=new FailingModel();using var http=new HttpClient(handler);int reads=0;
+   var pipeline=new MediaPipeline(new DialogueMatcher(http),(_,_,_)=>{reads++;throw new IOException("Changed source needs fresh dialogue");},new SubtitleMatcher(new Source(set),Path.Combine(output,"cache")));
+   var progress=new Progress(s=>{if(s.StartsWith("Subtitle pass complete. AI fallback:"))File.AppendAllText(b.Text("path")," changed");});
+   var path=pipeline.RunAsync(new(Path.GetDirectoryName(a.Text("path"))!,guide,output,"m","http://127.0.0.1:1234/v1/chat/completions",DialogueInput:input,SelectedFiles:[b.Text("path"),a.Text("path")],SeriesIdentity:series),progress,default).GetAwaiter().GetResult();
+   var held=Data.Read(path).Array("files").Single(r=>r.Text("path")==b.Text("path"))!;Assert(reads==1&&handler.Requests==0&&held.Text("error").Contains("Changed source")&&held.Array("candidates").Count==0);
   });
   test("Successful subtitle-only resume avoids reference access and model initialization",()=>{
    var row=Row("subtitle-resume-media","resume.mkv",first,'a');SubtitleResult.Apply(row,catalog,Match("subtitle-resume-match",first));
@@ -63,6 +101,14 @@ static class SubtitleIntegrationTests {
    var settings=new MatchSettings(Path.GetDirectoryName(row.Text("path"))!,guide,output,"","",SelectedFiles:[row.Text("path")],SeriesIdentity:series,Restart:true,Scope:new("show"));
    pipeline.RunAsync(settings,new Progress(),default).GetAwaiter().GetResult();Assert(source.Calls==0&&JsonNode.DeepEquals(Data.Read(Path.Combine(output,"report.json")).Array("files")[0],row));
    Assert(IdentificationScope.Read(Data.Read(Path.Combine(output,"report.json")))==scope);
+  });
+  test("Reanalysis accepts cached subtitle matches without shared JSON ownership errors or AI",()=>{
+   var row=Row("subtitle-reanalyze-cache-media","a.mkv",first,'a');var output=Path.Combine(temp,"subtitle-reanalyze-cache-output");var input=Path.Combine(output,"input.json");var guide=Path.Combine(output,"catalog.json");Data.Save(input,new{files=new[]{row}});Data.Save(guide,new{episodes=catalog});
+   using var handler=new FailingModel();using var http=new HttpClient(handler);
+   var pipeline=new MediaPipeline(new DialogueMatcher(http),(_,_,_)=>throw new Exception("No extraction expected"),new SubtitleMatcher(new Source(set),Path.Combine(output,"cache")));
+   var settings=new MatchSettings(Path.GetDirectoryName(row.Text("path"))!,guide,output,"","",DialogueInput:input,SelectedFiles:[row.Text("path")],SeriesIdentity:series,UseAiFallback:false);
+   pipeline.RunAsync(settings,new Progress(),default).GetAwaiter().GetResult();var progress=new Progress();var path=pipeline.RunAsync(settings with{Restart=true,Reanalyze=true},progress,default).GetAwaiter().GetResult();
+   var saved=Data.Read(path).Array("files").Single()!.AsObject();Assert(SubtitleResult.Valid(saved,catalog,series)&&saved.Text("error")==""&&handler.Requests==0&&progress.Lines.Any(l=>l.Contains("exact-input subtitle comparison")));
   });
   test("Subtitle results preserve duplicate grouping and hold distinct competing recordings",()=>{
    var a=Row("subtitle-duplicates","a.mkv",first,'a');var b=Row("subtitle-duplicates","b.mkv",first,'b');var result=Match("subtitle-duplicates-match",first);
@@ -110,7 +156,7 @@ static class SubtitleIntegrationTests {
   public int Calls;public bool Fail;public Action? OnLoad;
   public Task<SubtitleReferenceSet> LoadAsync(SeriesIdentity series,IReadOnlyList<Episode> catalog,IProgress<string> progress,CancellationToken ct){Calls++;OnLoad?.Invoke();ct.ThrowIfCancellationRequested();if(Fail)throw new Exception("Reference source must not be called");return Task.FromResult(value);}
  }
- sealed class Progress:IProgress<string>{public List<string> Lines=[];public void Report(string value)=>Lines.Add(value);}
+ sealed class Progress(Action<string>? onReport=null):IProgress<string>{public List<string> Lines=[];public void Report(string value){Lines.Add(value);onReport?.Invoke(value);}}
  sealed class FailingModel:HttpMessageHandler {public int Requests;protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r,CancellationToken ct){Requests++;return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));}}
  sealed class Response(Func<HttpRequestMessage,HttpResponseMessage> respond):HttpMessageHandler {protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r,CancellationToken ct)=>Task.FromResult(respond(r));}
 }

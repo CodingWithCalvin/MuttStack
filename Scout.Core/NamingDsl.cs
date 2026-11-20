@@ -38,7 +38,7 @@ public static class NamingDsl {
    if(args.Length!=count)throw new ArgumentException(match.Groups[1].Value+" expects "+count+" quoted argument(s).");
    if((match.Groups[1].Value=="replace"||match.Groups[1].Value=="remove"&&target==null)&&args[0].Length==0)throw new ArgumentException("replace requires a nonempty search string.");
    if(match.Groups[1].Value=="join"&&pieces[0]!="titles")throw new ArgumentException("join applies to {titles}.");
-   if(pieces[0] is "code" or "season" or "season:00" or "episode" or "episode:00" or "id" or "part" or "parts")throw new ArgumentException("Formatting functions apply to text tokens; keep episode numbers and IDs intact.");
+   if(pieces[0] is "code" or "season" or "season:00" or "episode" or "episode:00" or "id" or "year" or "part" or "parts")throw new ArgumentException("Formatting functions apply to text tokens; keep episode numbers, years and IDs intact.");
    ops.Add(new(match.Groups[1].Value,args,target));
   }
   return new(pieces[0],ops);
@@ -61,12 +61,16 @@ public static class NamingDsl {
    return "{"+expression.Token+string.Concat(ops.Select(o=>"."+o.Name+"("+(o.Target is {} target?target.ToString().ToLowerInvariant():string.Join(", ",o.Args.Select(Quote)))+")"))+"}";
   });
  }
- private static List<string> Components(string template) {
-  if(string.IsNullOrWhiteSpace(template)||template.Length>1024)throw new ArgumentException("Path template must contain 1–1024 characters.");
+ internal static List<string> SplitPath(string template) {
   var parts=new List<string>();var current=new StringBuilder();int offset=0;
   void Literal(string text) {foreach(var c in text)if(c is '\\' or '/'){parts.Add(current.ToString());current.Clear();}else current.Append(c);}
   foreach(Match m in Regex.Matches(template,Pattern)){Literal(template[offset..m.Index]);current.Append(m.Value);offset=m.Index+m.Length;}
   Literal(template[offset..]);parts.Add(current.ToString());
+  return parts;
+ }
+ private static List<string> Components(string template) {
+  if(string.IsNullOrWhiteSpace(template)||template.Length>1024)throw new ArgumentException("Path template must contain 1–1024 characters.");
+  var parts=SplitPath(template);
   if(parts.Count is <2 or >8||parts.Any(p=>string.IsNullOrWhiteSpace(p)||p.Trim() is "." or ".."))throw new ArgumentException("Use relative folders followed by a filename; empty components and . or .. paths are not allowed.");
   return parts;
  }
@@ -94,6 +98,21 @@ public static class NamingDsl {
   RemovalTarget.Diacritics=>new string(value.Normalize(NormalizationForm.FormD).Where(c=>CharUnicodeInfo.GetUnicodeCategory(c)!=UnicodeCategory.NonSpacingMark).ToArray()).Normalize(NormalizationForm.FormC),
   _=>throw new ArgumentException("Unknown removal selector.")
  };
+ internal static void ValidateTextComponent(string component,IReadOnlySet<string> allowedTokens) {
+  var literal=Regex.Replace(component,Pattern,m=>{
+   if(m.Value is "{{" or "}}")return "";
+   var expression=Parse(m.Groups[1].Value);
+   if(!allowedTokens.Contains(expression.Token))throw new ArgumentException("Destination tokens are {series}, {year}, {provider} and {id}. Put season and episode tokens in the relative naming template.");
+   return "";
+  });
+  if(literal.IndexOfAny("{}<>:\"|?*".ToCharArray())>=0||literal.Any(char.IsControl))throw new ArgumentException("Invalid characters or unmatched braces in destination template.");
+ }
+ internal static string RenderTextComponent(string component,Func<string,string> tokenValue) => Regex.Replace(component,Pattern,m=>{
+  if(m.Value=="{{")return "{";if(m.Value=="}}")return "}";
+  var expression=Parse(m.Groups[1].Value);var value=tokenValue(expression.Token);
+  foreach(var op in expression.Operations)value=op.Name=="remove"?(op.Target is {} target?Remove(value,target):value.Replace(op.Args[0],"",StringComparison.Ordinal)):Transform(value,op.Name,op.Args);
+  return PreviewPlanner.SafeName(value);
+ });
  private static string Transform(string value,string name,string[] a)=>name switch {
   "removePunctuation"=>Remove(value,RemovalTarget.Punctuation),
   "replacePunctuation"=>Regex.Replace(value,@"[\p{P}\p{S}]+",_=>a[0]),
@@ -114,7 +133,7 @@ public static class NamingDsl {
    var values=token=="titles"?titles.ToList():new List<string>{token switch {
     "series"=>series,"title"=>string.Join(" and ",titles),"code"=>code,
     "season"=>first.Season.ToString(),"season:00"=>first.Season.ToString("00"),"episode"=>first.Number.ToString()+(episodes.Count==2?$"-E{episodes[1].Number:00}":""),"episode:00"=>first.Number.ToString("00")+(episodes.Count==2?$"-E{episodes[1].Number:00}":""),
-    "provider"=>identity!.Provider,"id"=>identity!.Id,"part"=>parts>0?part.ToString():"","parts"=>parts>0?parts.ToString():"","partSuffix"=>parts>0?$" (Part {part} of {parts})":"",_=>""
+    "provider"=>identity!.Provider,"id"=>identity!.Id,"year"=>identity?.Year is {Length:>0} year?year:throw new ArgumentException("Select a catalog show with a release year before using {year}."),"part"=>parts>0?part.ToString():"","parts"=>parts>0?parts.ToString():"","partSuffix"=>parts>0?$" (Part {part} of {parts})":"",_=>""
    }};
    foreach(var op in expression.Operations)values=op.Name=="join"?[string.Join(op.Args[0],values)]:values.Select(v=>op.Name=="remove"?(op.Target is {} target?Remove(v,target):v.Replace(op.Args[0],"",StringComparison.Ordinal)):Transform(v,op.Name,op.Args)).ToList();
    return string.Join(" and ",values);

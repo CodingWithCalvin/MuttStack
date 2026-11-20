@@ -14,6 +14,7 @@ namespace Scout.Core.Subtitles;
 public sealed class SubdlReferences(string cacheRoot,string? apiKey,string? metadataKey=null,
  Func<HttpMessageHandler>? apiHandler=null,Func<HttpMessageHandler>? metadataHandler=null):ISubtitleReferenceSource {
  const string CacheVersion="subdl-references-v1";
+ const string RetrievalPolicy="packs-and-titled-episodes-v2";
  public async Task<SubtitleReferenceSet> LoadAsync(SeriesIdentity series,IReadOnlyList<Episode> catalog,IProgress<string> progress,CancellationToken ct) {
   series.Validate();ct.ThrowIfCancellationRequested();
   var root=Path.Combine(cacheRoot,CacheVersion,CollectionResolver.Hash(series.Key));var manifestPath=Path.Combine(root,"manifest.json");
@@ -28,8 +29,9 @@ public sealed class SubdlReferences(string cacheRoot,string? apiKey,string? meta
     if(reference.Id!=id||reference.Cues.Count==0)throw new InvalidDataException("Incomplete subtitle reference cache.");
     references.Add(reference);
    }
-   if(references.Count>0&&(string.IsNullOrWhiteSpace(apiKey)||cached.Bool("complete")&&cached.Text("guide_hash")==guideHash&&DateTimeOffset.TryParse(cached.Text("updated"),out var updated)&&DateTimeOffset.UtcNow-updated<TimeSpan.FromDays(7))) {
-    progress.Report($"Reusing {references.Count} saved subtitle references for {series.Name}.");return new(series,references,"Saved subtitle references reused.");
+   if(references.Count>0&&(string.IsNullOrWhiteSpace(apiKey)||cached.Text("retrieval_policy")==RetrievalPolicy&&cached.Bool("complete")&&catalog.Select(e=>e.Season).Distinct().All(s=>SeasonReferences(references,s)>0)&&cached.Text("guide_hash")==guideHash&&DateTimeOffset.TryParse(cached.Text("updated"),out var updated)&&DateTimeOffset.UtcNow-updated<TimeSpan.FromDays(7))) {
+    var coverage=CoverageNote(references,catalog);
+    progress.Report($"Reusing {references.Count} saved English subtitle references for {series.Name}. "+coverage);return new(series,references,coverage);
    }
   }catch(Exception ex) when(ex is IOException or InvalidDataException or JsonException or InvalidOperationException or ArgumentException){references.Clear();cached=null;}
   if(string.IsNullOrWhiteSpace(apiKey))return new(series,references,"No SubDL key configured; using AI for unresolved dialogue.");
@@ -56,9 +58,11 @@ public sealed class SubdlReferences(string cacheRoot,string? apiKey,string? meta
      }catch(InvalidDataException){/* An unsupported download is never followed. */}
     }
     var basePack=packs.OrderByDescending(p=>p.Files).ThenBy(p=>p.Url.AbsolutePath,StringComparer.Ordinal).Take(1);
-    var titlePacks=packs.Where(p=>p.Titles>0).OrderByDescending(p=>p.Titles).ThenBy(p=>p.Url.AbsolutePath,StringComparer.Ordinal).Take(2);
+    var titlePacks=packs.Where(p=>p.Titles>0).OrderByDescending(p=>p.Titles).ThenBy(p=>p.Url.AbsolutePath,StringComparer.Ordinal).Take(8);
     var selected=basePack.Concat(titlePacks).DistinctBy(p=>p.Url.AbsolutePath).ToArray();
-    if(selected.Length==0){notes.Add($"No English reference pack for season {season:00}.");continue;}
+    // A pack indexed under one season can contain several seasons. Assess the
+    // actual reference files after all packs have loaded, not each search page.
+    if(selected.Length==0)continue;
     foreach(var pack in selected) {
      if(references.Any(r=>r.Url==pack.Url.GetLeftPart(UriPartial.Path)))continue;
      try {
@@ -84,9 +88,22 @@ public sealed class SubdlReferences(string cacheRoot,string? apiKey,string? meta
   catch(Exception ex) when(ex is IOException or InvalidDataException or HttpRequestException or InvalidOperationException or ArgumentException or JsonException or OperationCanceledException) {
    complete=false;notes.Add("Subtitle lookup was unavailable; saved references were retained and unresolved files will use AI.");
   }
-  ct.ThrowIfCancellationRequested();Save(complete);
-  var note=string.Join(" ",notes);progress.Report($"{references.Count} subtitle references available. "+note);return new(series,references,note);
-  void Save(bool finished)=>Data.Save(manifestPath,new{series,guideHash,complete=finished,updated=DateTimeOffset.UtcNow,references=references.Select(r=>r.Id)});
+  ct.ThrowIfCancellationRequested();
+  if(catalog.Select(e=>e.Season).Distinct().Any(s=>SeasonReferences(references,s)==0))complete=false;
+  Save(complete);
+  notes.Add(CoverageNote(references,catalog));
+  var note=string.Join(" ",notes);progress.Report($"{references.Count} English subtitle references available. "+note);return new(series,references,note);
+  void Save(bool finished)=>Data.Save(manifestPath,new{series,guideHash,retrievalPolicy=RetrievalPolicy,complete=finished,updated=DateTimeOffset.UtcNow,references=references.Select(r=>r.Id)});
+ }
+ static int SeasonReferences(IEnumerable<SubtitleReference> references,int season)=>references.Count(r=>(TitleMapping.Label(r.Name)?.Season??r.Season)==season);
+ static string CoverageNote(IReadOnlyList<SubtitleReference> references,IReadOnlyList<Episode> catalog) {
+  var seasons=catalog.Select(e=>e.Season).Distinct().Order().ToArray();
+  var covered=seasons.Select(s=>(Season:s,Count:SeasonReferences(references,s))).ToArray();
+  var available=covered.Where(s=>s.Count>0).Select(s=>$"{s.Season:00}: {s.Count}");
+  var missing=covered.Where(s=>s.Count==0).Select(s=>s.Season.ToString("00")).ToArray();
+  var note=available.Any()?"English reference files by subtitle season — "+string.Join("; ",available)+".":"";
+  if(missing.Length>0)note+=" No English reference files loaded for subtitle season(s) "+string.Join(", ",missing)+"; unresolved dialogue will use AI.";
+  return note.Trim();
  }
  async Task<string> ImdbAsync(SeriesIdentity series,CancellationToken ct) {
   using var http=new HttpClient(metadataHandler?.Invoke()??new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(45)};

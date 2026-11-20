@@ -12,7 +12,7 @@ public static class ClaimReview
         Action checkpoint,IProgress<string> progress,CancellationToken ct,ScoutPause? pause=null,IReadOnlySet<string>? allowedPaths=null,bool checkSources=true)
     {
         if(allowedPaths!=null)allowedPaths=IssueReview.Expand(report,allowedPaths);
-        var rows=CollectionResolver.Resolve(report).Where(g=>g.HumanDecision==null&&g.Status is not ("source_unavailable" or "overridden_conflict")&&
+        var rows=CollectionResolver.Resolve(report).Where(g=>g.Compilation==null&&g.HumanDecision==null&&g.Status is not ("source_unavailable" or "overridden_conflict")&&
             (g.Status=="unresolved_conflict"||g.Rows.Any(r=>r.Bool("claim_review_pending")||r.Text("claim_review_error")!="")))
             .SelectMany(g=>g.Rows).Where(r=>allowedPaths==null||allowedPaths.Contains(Path.GetFullPath(r.Text("path")))).ToList();
         if(rows.Count==0)return;

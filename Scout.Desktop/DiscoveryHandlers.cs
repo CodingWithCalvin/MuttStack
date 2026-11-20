@@ -96,7 +96,7 @@ public partial class MainWindow
             }
             if(string.IsNullOrWhiteSpace(settings.Model))throw new InvalidOperationException("Configure a model in Settings to use AI assistance. You can confirm a catalog suggestion without a model.");
             workspace.SeriesIdentity=null;workspace.Catalog="";catalogPath="";SeriesName.Text="";ShowIdentity.Text="Identifying series…";workspaces.Save(workspace);
-            var requestNumber=0;
+            var requestNumber=0;var modelActivity=BeginModelActivity();
             async Task<JsonObject> Infer(List<DiscoveryDialogue> blocks,List<ShowCandidate> candidates,CancellationToken ct) {
                 var options=settings.Inference(outputTokenLimit:ShowDiscovery.OutputTokenLimit(settings.ManagedThinking));
                 var cacheKey=ShowDiscovery.CacheKey(settings.Model,settings.Endpoint,options,blocks,candidates);
@@ -108,22 +108,15 @@ public partial class MainWindow
                     ConnectionPolicy.Validate(settings.Provider,settings.Endpoint,settings.AllowCloudDialogue,key);
                     if(settings.Provider=="managed")runtime=await LocalRuntime.StartAsync(settings,progress,ct);
                     modelHttp=new HttpClient(new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(settings.EffectiveTimeoutSeconds)};
-                    transport=new(modelHttp,settings.Inference(key,ShowDiscovery.OutputTokenLimit(settings.ManagedThinking)));
+                    transport=new(modelHttp,settings.Inference(key,ShowDiscovery.OutputTokenLimit(settings.ManagedThinking)),activity:modelActivity);
                 }
                 var timer=Stopwatch.StartNew();var step=++requestNumber;var stage=candidates.Count>0?"verify series":"identify alternatives";
                 progress.Report($"AI series check {step}: {stage} · {blocks.Count} dialogue samples, {candidates.Count} catalog candidates.");
-                var pending=ShowDiscovery.InferAsync(transport,settings.Model,settings.Endpoint,blocks,candidates,ct);
-                using var pulse=new CancellationTokenSource();
-                async Task Elapsed() {
-                    using var ticker=new PeriodicTimer(TimeSpan.FromSeconds(30));
-                    try{while(await ticker.WaitForNextTickAsync(pulse.Token))progress.Report($"AI series check {step}: {stage} · waiting for model response · {timer.Elapsed.TotalSeconds:0}s elapsed.");}
-                    catch(OperationCanceledException) when(pulse.IsCancellationRequested){}
-                }
-                var heartbeat=Elapsed();
-                try{var response=await pending;Data.Save(cachePath,response);progress.Report($"AI series check {step} finished in {timer.Elapsed.TotalSeconds:0}s.");return response;}
-                finally{pulse.Cancel();await heartbeat;}
+                using var source=transport.ForSource(string.Join(" + ",blocks.Select(b=>Path.GetFileName(b.File)).Distinct()));
+                var response=await ShowDiscovery.InferAsync(transport,settings.Model,settings.Endpoint,blocks,candidates,ct);
+                Data.Save(cachePath,response);progress.Report($"AI series check {step} finished in {timer.Elapsed.TotalSeconds:0}s.");return response;
             }
-            var result=await Task.Run(()=>new ShowDiscovery(catalog).DiscoverAsync(root,settings.Ffprobe,settings.Ffmpeg,Infer,progress,token,paths,r=>Data.Save(Path.Combine(directory,"discovery.json"),r),requireDialogue:true),token);
+            var result=await Task.Run(()=>new ShowDiscovery(catalog,speech:settings.Speech.Enabled?new SpeechTranscriber(settings.Speech,settings.ModelDirectory):null,speechCache:Path.Combine(directory,"speech-cache")).DiscoverAsync(root,settings.Ffprobe,settings.Ffmpeg,Infer,progress,token,paths,r=>Data.Save(Path.Combine(directory,"discovery.json"),r),requireDialogue:true),token);
             Data.Save(Path.Combine(directory,"discovery.json"),result);DisplayDiscovery(result);
             var supported=result.Candidates.Where(c=>c.DialogueSupported).ToList();
             if(supported.Count==1){ApplyDiscoveredShow(supported[0]);result.Status="Series identified. Choose Identify episodes to continue.";Data.Save(Path.Combine(directory,"discovery.json"),result);ShowDiscoveryStatus.Text=result.Status;}

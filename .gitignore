@@ -22,3 +22,8 @@ models/
 *.log
 **/__pycache__/
 *.py[cod]
+
+# Signing keys are never source or release artifacts.
+*.pfx
+*.p12
+*.key

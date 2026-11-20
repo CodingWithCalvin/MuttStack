@@ -8,7 +8,7 @@ sealed record ProviderLink(Episode[] Episodes,string Method,bool Complete,string
 }
 static class TitleMapping {
  public static string Key(string value)=>Regex.Replace(value.ToLowerInvariant(),@"[^\p{L}\p{N}]","");
- static readonly Regex Code=new(@"(?i)(?:\bS(?<s>\d{1,2})[ ._-]*E(?<e>\d{1,3})(?:[ab])?(?:[- ]E?(?<end>\d{1,3}))?|(?<!\d)(?<s>\d{2})\.(?<e>\d{2})(?:-(?<end>\d{2}))?)(?!\d)");
+ static readonly Regex Code=new(@"(?i)(?:\bS(?<s>\d{1,2})[ ._-]*E(?<e>\d{1,3})(?:[ab])?(?:[- ]E?(?<end>\d{1,3}))?|(?<!\d)(?<s>\d{1,2})x(?<e>\d{1,3})(?:-(?<end>\d{1,3}))?|(?<!\d)(?<s>\d{2})\.(?<e>\d{2})(?:-(?<end>\d{2}))?)(?!\d)");
  static readonly Regex PartSuffix=new(@"(?i)\s*(?:\((?:part\s*)?(?<n>\d+)\)|[-:. ]+part\s*(?<n>\d+)(?:\s+of\s+\d+)?)\s*$");
  public static (string Base,int Part) SplitTitle(string title) {
   var m=PartSuffix.Match(title);return m.Success?(Key(title[..m.Index]),int.Parse(m.Groups["n"].Value)):(Key(title),0);

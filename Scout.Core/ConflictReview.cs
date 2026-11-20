@@ -8,7 +8,7 @@ public static class ConflictReview {
   var groups=CollectionResolver.Resolve(report);
   var paths=groups.Where(g=>g.Status=="unresolved_conflict"&&(episodeCode==null||g.Claims.Any(e=>e.Code==episodeCode))).SelectMany(g=>g.Rows).Select(r=>Path.GetFullPath(r.Text("path"))).ToHashSet(StringComparer.OrdinalIgnoreCase);
   if(allowedPaths!=null){allowedPaths=IssueReview.Expand(report,allowedPaths);paths.IntersectWith(allowedPaths);}
-  var eligible=groups.Where(g=>g.HumanDecision==null&&g.Status is not ("source_unavailable" or "overridden_conflict")).SelectMany(g=>g.Rows).ToHashSet();
+  var eligible=groups.Where(g=>g.Compilation==null&&g.HumanDecision==null&&g.Status is not ("source_unavailable" or "overridden_conflict")).SelectMany(g=>g.Rows).ToHashSet();
   var rows=report.Array("files").OfType<JsonObject>().Where(r=>eligible.Contains(r)&&(paths.Contains(Path.GetFullPath(r.Text("path")))||r.Bool("conflict_review_pending")&&(allowedPaths==null||allowedPaths.Contains(Path.GetFullPath(r.Text("path")))))).ToList();
   if(rows.Count==0)return;
   foreach(var row in rows)row["conflict_review_pending"]=true;checkpoint();
@@ -16,6 +16,7 @@ public static class ConflictReview {
    pause?.Checkpoint();ct.ThrowIfCancellationRequested();
    var signature=Signature(MultipartEvidence.Cues(row),catalog,matcher,model,endpoint);
    progress.Report("Full-guide conflict review: "+Path.GetFileName(row.Text("path")));
+   using var source=matcher.ForSource(Path.GetFileName(row.Text("path")));
    try {
     var proof=row.DeepClone().AsObject();proof.Remove("conflict_review_pending");proof.Remove("conflict_review_error");
     if(checkSources&&!RunRecovery.CanReuse(proof,catalog))throw new InvalidDataException("Source or saved evidence cannot be verified unchanged. Re-identify this recording before conflict review.");

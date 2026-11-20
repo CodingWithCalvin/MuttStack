@@ -4,10 +4,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.14" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     <EmbeddedResource Include="Assets/*" />
-    <!-- Compile the same protocol under each app's own runtime. -->
-    <Compile Include="../../Tucker/src/Doggo.Handoffs/*.cs" Link="Doggo/%(Filename)%(Extension)" />
+    <!-- Doggo database adapters are owned and compiled locally under Doggo/. -->
   </ItemGroup>
-  <Target Name="CheckDoggoProtocolSource" BeforeTargets="CoreCompile">
-    <Error Condition="!Exists('../../Tucker/src/Doggo.Handoffs/ScoutHandoff.cs')" Text="Scout handoffs require the matching sibling Tucker checkout (../Tucker/src/Doggo.Handoffs). See tools/Scout.HandoffRehearsal/README.md." />
-  </Target>
+
 </Project>

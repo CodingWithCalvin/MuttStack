@@ -13,7 +13,7 @@ sealed class SubdlApi:IDisposable {
   this.key=key;http=new(handler??new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(60)};
  }
  public Task<JsonObject> Titles(string series,CancellationToken ct)=>Json("movies/search?q="+Uri.EscapeDataString(series)+"&type=tv&limit=30",ct);
- public Task<JsonObject> Subtitles(string id,int season,CancellationToken ct)=>Json("subtitles/search?sd_id="+Uri.EscapeDataString(id)+"&type=tv&languages=en&season="+season+"&full_season=1&unpack=1&subs_per_page=30",ct);
+ public Task<JsonObject> Subtitles(string id,int season,CancellationToken ct)=>Json("subtitles/search?sd_id="+Uri.EscapeDataString(id)+"&type=tv&languages=en&season="+season+"&unpack=1&subs_per_page=30",ct);
  async Task<JsonObject> Json(string relative,CancellationToken ct) {
   var bytes=await Get(new Uri("https://api.subdl.com/api/v2/"+relative),4*1024*1024,false,ct);
   try {

@@ -8,6 +8,8 @@ namespace Scout.Core;
 
 public sealed class AppSettings
 {
+    public SpeechSettings Speech {get;set;}=new();
+    public string DestinationTemplate {get;set;}="";
     public NamingOptions Naming {get;set;}=new();
     public string MetadataProvider {get;set;}="tvdb";
     public bool UseSubtitleMatching {get;set;}=true;
@@ -53,7 +55,9 @@ public sealed class AppSettings
     [JsonIgnore] public int EffectiveTimeoutSeconds=>ManagedThinking?Math.Max(RequestTimeoutSeconds,7200):Provider=="managed"&&GpuLayers==0?Math.Max(RequestTimeoutSeconds,1800):RequestTimeoutSeconds;
     public InferenceOptions Inference(string? key=null,int? outputTokenLimit=null,bool allowExcerptVerification=false)=>new(){Provider=Provider,ApiKey=key,AllowCloudDialogue=AllowCloudDialogue,EnableThinking=ManagedThinking,UseEvidenceRetrieval=true,AllowExcerptVerification=allowExcerptVerification,MaxOutputTokens=Math.Min(EffectiveOutputTokens,outputTokenLimit??EffectiveOutputTokens),MaxRequests=MaxRequestsPerRun};
     public void Validate() {
+        Speech.Validate();
         Naming.Validate();
+        Scout.Core.DestinationTemplate.Validate(DestinationTemplate);
         if(MetadataProvider is not ("tvdb" or "tmdb" or "tvmaze"))throw new ArgumentException("Unknown metadata provider.");
         if(Provider is not ("local" or "managed" or "openai" or "compatible"))throw new ArgumentException("Unknown model provider.");
         if(CpuThreads<1||CpuThreads>256||PromptThreads<0||PromptThreads>256||GpuLayers<0||GpuLayers>999||ContextSize<4096||ContextSize>1048576)throw new ArgumentException("Check generation threads (1–256), prompt threads (0–256), GPU layers and context size.");

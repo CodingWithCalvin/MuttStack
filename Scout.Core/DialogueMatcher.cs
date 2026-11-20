@@ -5,9 +5,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 namespace Scout.Core;
-public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? options=null,Func<CancellationToken,Task>? beforeRequest=null)
+public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? options=null,Func<CancellationToken,Task>? beforeRequest=null,IProgress<ModelActivity>? activity=null)
 {
-    private readonly ModelTransport transport=new(client,options??new(),beforeRequest);
+    private readonly ModelTransport transport=new(client,options??new(),beforeRequest,activity);
+    public IDisposable ForSource(string name)=>transport.ForSource(name);
     public string CacheScope=>transport.CacheScope;
     public UsageSnapshot Usage=>transport.Usage;
     public Uri ValidateEndpoint(string endpoint)=>transport.ValidateEndpoint(endpoint);
@@ -123,13 +124,13 @@ public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? 
         JsonObject result=null!;var attempts=new JsonArray();
         for(int attempt=0;attempt<2;attempt++) {
             JsonObject raw;
-            try {raw=await transport.CompleteAsync(model,endpoint,prompt,source,schema,ct);}
+            try {raw=await transport.CompleteAsync(model,endpoint,prompt,source,schema,ct,verify?"Checking episode match":"Finding episode candidates");}
             catch(ModelContextException) when(!compactRetry) {
                 compactRetry=true;
                 // The response-format schema still enforces every field and allowed value.
                 // Keep the complete original dialogue, catalog, and evidence instructions.
                 source["task"]=TaskText(true);
-                raw=await transport.CompleteAsync(model,endpoint,prompt,source,schema,ct);
+                raw=await transport.CompleteAsync(model,endpoint,prompt,source,schema,ct,"Retrying with shorter instructions");
             }
             try {
                 result=verify?CompactVerification.Expand(raw,blocks,episodes):raw.DeepClone().AsObject();

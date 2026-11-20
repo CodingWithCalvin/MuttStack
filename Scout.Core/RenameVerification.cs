@@ -3,6 +3,9 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 namespace Scout.Core;
+public sealed class CrossVolumeMoveException : IOException {
+ public CrossVolumeMoveException():base("The destination is on another volume."){}
+}
 
 // Same-volume rename changes a directory entry, not the file's contents.
 // Keep a read handle that disallows writers for the duration of the operation.
@@ -49,7 +52,8 @@ public static class RenameVerification {
   // across volumes and never overwrite an existing destination.
   if(!MoveFileExW(LongPath(source),LongPath(destination),0)) {
    int error=Marshal.GetLastWin32Error();
-   throw new IOException(error==17?"This move crosses volumes. Scout's fast rename leaves it in place; a copy workflow is required.":new Win32Exception(error).Message);
+   if(error==17)throw new CrossVolumeMoveException();
+   throw new IOException(new Win32Exception(error).Message);
   }
  }
  private static string LongPath(string path) {

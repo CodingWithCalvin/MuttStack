@@ -18,7 +18,7 @@ public partial class MainWindow {
   WorkspaceHeading.Text=workspace?.Name??"Your next Scout";
   WorkspaceSource.Text=workspace?.Library??"One Scout. One source folder. One process.";
   RefreshScoutActions();
-  RefreshDiscovery();
+  RefreshDiscovery();RefreshRunOptions();
   NamingChanged(this,new RoutedEventArgs());
  }
  private void RecordEvent(string text) {
@@ -132,11 +132,14 @@ public partial class MainWindow {
   RefreshHistory();ShowPage("Session");
  }
  private void ImportWorkspace(string path) {
-  Data.Read(path);
-  var rows=Data.Read(path).Array("files").Select(x=>x?.AsObject().Text("path")).Where(x=>!string.IsNullOrWhiteSpace(x)).Select(x=>Path.GetFullPath(x!)).ToList();
+  var imported=Data.Read(path);
+  var rows=imported.Array("files").Select(x=>x?.AsObject().Text("path")).Where(x=>!string.IsNullOrWhiteSpace(x)).Select(x=>Path.GetFullPath(x!)).ToList();
   if(rows.Count==0)throw new InvalidDataException("A report needs source files to create a Scout.");
-  var root=Path.GetDirectoryName(rows[0])!;
-  while(rows.Any(x=>!PreviewPlanner.Within(x,root)))root=Path.GetDirectoryName(root)??throw new InvalidDataException("No shared source folder.");
+  var root=imported.Text("source_root");
+  if(string.IsNullOrWhiteSpace(root)) {
+   root=Path.GetDirectoryName(rows[0])!;
+   while(rows.Any(x=>!PreviewPlanner.Within(x,root)))root=Path.GetDirectoryName(root)??throw new InvalidDataException("No shared source folder.");
+  }
   if(Path.GetFileName(root).StartsWith("Season ",StringComparison.OrdinalIgnoreCase)||Path.GetFileName(root).Equals("Specials",StringComparison.OrdinalIgnoreCase))root=Path.GetDirectoryName(root)!;
   CreateRun(root);
   var directory=workspaces.DirectoryFor(workspace!);
@@ -144,6 +147,9 @@ public partial class MainWindow {
   var catalog=Path.Combine(Path.GetDirectoryName(path)!,"catalog.json");
   if(ScoutStorage.Exists(catalog))ScoutStorage.Copy(catalog,Path.Combine(directory,"catalog.json"));
   workspace!.Report=Path.Combine(directory,"report.json");workspace.Status="Ready for review";
+  // Import creates a new Scout. Report destinations describe past moves, not
+  // a destination override for this new run.
+  workspace.ContentOptions=ScoutContentOptions.Read(imported)??new();
  }
  private void MinimizeWindow(object sender,RoutedEventArgs e)=>SystemCommands.MinimizeWindow(this);
  private void ToggleMaximize(object sender,RoutedEventArgs e) {

@@ -1,33 +1,19 @@
-# Isolated Tucker → Scout rehearsal
+# Isolated Doggo contract rehearsal
 
-Uses the real Tucker sender and Scout receiver with synthetic media. No encoders, model servers, installed app executables, or live databases are opened. The tool deliberately accepts only an existing `.build/doggo-rehearsal-*/doggo.migrated.db` snapshot as its source. Preparation creates a new copy and refuses existing output directories and junctions.
+This tool uses frozen synthetic Tucker-format contract messages and Scout's real receiver. It compiles only Scout-owned code. No companion checkout, encoder, model, live executable or live database is opened.
 
-Build with Scout's pinned .NET SDK and a sibling `Tucker` checkout containing the matching handoff implementation. `Scout.Core` source-links the shared protocol. This tool additionally source-links the Tucker core files used by its sender tests.
-
-From the Scout repository:
+Build with Scout's pinned SDK, then use a new guarded `.build/handoff-rehearsal-*` directory:
 
 ```powershell
-dotnet build tools/Scout.HandoffRehearsal -c Release -m:1
-if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
-
+dotnet build tools/Scout.HandoffRehearsal -c Release
 $handoffRoot = Join-Path $PWD '.build/handoff-rehearsal-new'
-$offlineSnapshot = Join-Path $PWD '.build/doggo-rehearsal-EXISTING/doggo.migrated.db'
-$project = 'tools/Scout.HandoffRehearsal'
-
-dotnet run --project $project -c Release --no-build -- prepare $handoffRoot $offlineSnapshot
-if ($LASTEXITCODE -ne 0) { throw 'Preparation failed' }
-foreach ($phase in @('send', 'accept', 'append', 'accept', 'verify')) {
-    dotnet run --project $project -c Release --no-build -- $phase $handoffRoot
-    if ($LASTEXITCODE -ne 0) { throw "Rehearsal failed: $phase" }
+foreach ($phase in @('prepare','send','accept','append','accept','verify')) {
+    dotnet run --project tools/Scout.HandoffRehearsal -c Release --no-build -- $phase $handoffRoot
 }
 ```
 
-Each invocation is a separate process. First Tucker sends two completed outputs from different series, while a third remains waiting. Scout accepts while the sender process is closed. Reopened Tucker sees the response and offers the third file after its simulated completion. Scout accepts it, and a final sender restart verifies both responses and refuses duplicate delivery.
+Each invocation is a separate process. The fixture offers two files, Scout accepts them into waiting drafts, another client observes the database acknowledgement after Scout closes, and a later file is offered and accepted. Retries retain the same ID and payload. Verification checks receipts, pre-existing rows, SQLite integrity and foreign keys. No processing starts.
 
-`handoff-report.json` records the result. `baseline.json` contains row hashes, not plaintext document contents. The copied database retains private records from the snapshot, so the entire rehearsal directory stays under ignored `.build`. Verification requires all existing rows to retain their original values, including encrypted credential bytes, legacy handoffs, and Ripley/Tucker/Scout records. It also checks the original snapshot hash, SQLite integrity and foreign keys.
+Optionally pass an existing `.build/doggo-rehearsal-*/doggo.migrated.db` offline snapshot as the third argument to `prepare`. The tool copies it and verifies its source hash afterward; it refuses existing output directories and junction ancestors. Such copies can contain private state and remain under ignored `.build`. `baseline.json` stores row hashes; `handoff-report.json` stores the result.
 
-This tool does not switch Scout storage or publish either application. To test UI controls without launching an installed app, run `Scout.Desktop.Tests`; it uses temporary settings, workspaces and synthetic data. Set the process-local `SCOUT_TEST_RENDERS` variable to an isolated directory to save the inbox render.
-
-The protocol and live-rollout boundary are documented in the sibling Tucker repository's `docs/scout-handoffs.md`.
-
-The `selection-handoff` and `selection-status` modes also verify a completed `.build/cutover-rehearsal-*` switch through Scout's persistent selector. They require that selector to point to the isolated directory's `Doggo/doggo.db`. See the [cutover tool](../Scout.DatabaseCutover/README.md) for the sequence.
+The `selection-handoff` and `selection-status` modes verify an isolated `.build/cutover-rehearsal-*` switch through Scout's own persistent selector. It must point to that directory's `Doggo/doggo.db`. See the [cutover tool](../Scout.DatabaseCutover/README.md) and [database contract](../../docs/doggo-contract.md).

@@ -8,6 +8,7 @@ public sealed record NamingSyntaxSpan(int Start,int Length,string Kind);
 public static class NamingEditorLanguage {
  public static readonly IReadOnlyList<NamingSuggestion> Tokens=[
   new("series","series","Official series name. Example: My Show"),
+  new("year","year","Series release year from the selected metadata provider. Example: 2007"),
   new("code","code","Episode code, including combined ranges. Example: S01E01-E02"),
   new("title","title","Episode title; combined titles joined with and."),
   new("titles","titles","Individual titles. Use .join(\" and \") to combine them."),
@@ -73,7 +74,7 @@ public static class NamingEditorLanguage {
    start=paren+1;kind="selector";items=Selectors;
   } else if(depth!=0)return null;
   else if(separator>=0) {
-   if(token is "code" or "season" or "season:00" or "episode" or "episode:00" or "id" or "part" or "parts")return null;
+   if(token is "code" or "season" or "season:00" or "episode" or "episode:00" or "id" or "year" or "part" or "parts")return null;
    start=separator+1;kind="function";items=Functions.Where(f=>f.Name!="join"||token=="titles").ToArray();
   } else {start=open+1;kind="token";items=Tokens;}
   while(start<caret&&char.IsWhiteSpace(text[start]))start++;

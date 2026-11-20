@@ -389,7 +389,9 @@ static class MultipartTests {
    using var client=new HttpClient(handler){Timeout=TimeSpan.FromMilliseconds(250)};
    var pipeline=new MediaPipeline(new DialogueMatcher(client),(_,_,_)=>throw new Exception("Saved dialogue and fingerprints must be reused"));
    var settings=new MatchSettings(root,catalog,output,"model","http://127.0.0.1:1234/v1/chat/completions",SelectedFiles:[first.Text("path"),second.Text("path")],Restart:true);
-   var saved=Data.Read(pipeline.RunAsync(settings,new InlineProgress(_=>{}),default).GetAwaiter().GetResult());
+   var matchProgress=new List<string>();var saved=Data.Read(pipeline.RunAsync(settings,new InlineProgress(matchProgress.Add),default).GetAwaiter().GetResult());
+   Assert(matchProgress.Any(l=>l.StartsWith("Match found: second.mkv")&&l.Contains(two.Code+" — "+two.Title)&&l.Contains("AI; collection checks pending")));
+   Assert(matchProgress.Any(l=>l.StartsWith("Matched: second.mkv"))&&!matchProgress.Any(l=>l.StartsWith("Matched: first.mkv")));
    var failed=saved.Array("files").Single(r=>r.Text("path")==first.Text("path"))!.AsObject();
    var done=saved.Array("files").Single(r=>r.Text("path")==second.Text("path"))!.AsObject();
    Assert(handler.Requests==3&&failed.Text("error_code")=="model_timeout"&&failed["timeout_seconds"]!.GetValue<double>()==0.25&&failed.Array("candidates").Count==0);

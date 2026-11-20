@@ -7,6 +7,12 @@ public sealed record ScoutSetup {
  public string? CandidateKey {get;set;}
 }
 public sealed class RunWorkspace {
+ public bool UseAiFallback {get;set;}
+ public ScoutContentOptions ContentOptions {get;set;}=new();
+ public string DestinationRoot {get;set;}="";
+ public string? DestinationTemplateOverride {get;set;}
+ // Empty distinguishes older saved runs. Every creation path explicitly saves default.
+ public string DestinationMode {get;set;}="";
  public string SourceHandoffId {get;set;}="";
  public ScoutSetup? Setup {get;set;}
  public ScoutSetup RestoreSetup()=>Setup??=new ScoutSetup {
@@ -41,7 +47,7 @@ public sealed class WorkspaceStore(string root) {
   library=Path.GetFullPath(library);
   if(!Directory.Exists(library))throw new DirectoryNotFoundException("The selected source folder is unavailable. Reconnect the drive or choose another folder.");
   var identity=LoadIdentity(library);
-  var run=new RunWorkspace{Library=library,Name=identity?.Name??Path.GetFileName(Path.TrimEndingDirectorySeparator(library)).Split(" {")[0],SeriesIdentity=identity};
+  var run=new RunWorkspace{DestinationMode="default",Library=library,Name=identity?.Name??Path.GetFileName(Path.TrimEndingDirectorySeparator(library)).Split(" {")[0],SeriesIdentity=identity};
   Save(run);return run;
  }
  public SeriesIdentity? LoadIdentity(string library) {

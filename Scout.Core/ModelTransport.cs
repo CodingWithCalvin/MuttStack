@@ -23,9 +23,12 @@ public sealed class ModelRequestTimeoutException(TimeSpan limit,Exception inner)
  public double TimeoutSeconds=>limit.TotalSeconds;
 }
 public sealed record UsageSnapshot(int Requests,long InputTokens,long OutputTokens,string Provider);
-public sealed class ModelTransport(HttpClient client,InferenceOptions options,Func<CancellationToken,Task>? beforeRequest=null)
+public sealed class ModelTransport(HttpClient client,InferenceOptions options,Func<CancellationToken,Task>? beforeRequest=null,IProgress<ModelActivity>? activity=null)
 {
  private int requests;private long inputTokens,outputTokens;
+ private readonly AsyncLocal<string?> sourceName=new();
+ public IDisposable ForSource(string name){var previous=sourceName.Value;sourceName.Value=name;return new SourceScope(()=>sourceName.Value=previous);}
+ private sealed class SourceScope(Action restore):IDisposable {public void Dispose()=>restore();}
  public string CacheScope=>$"{options.Provider}|{options.MaxOutputTokens}|thinking:{options.EnableThinking}|retrieval:{options.UseEvidenceRetrieval}|excerpt-audits:{options.AllowExcerptVerification}|responses-v4-distinct-candidates";
  public UsageSnapshot Usage=>new(requests,inputTokens,outputTokens,options.Provider);
  public Uri ValidateEndpoint(string endpoint)=>ConnectionPolicy.Validate(options.Provider,endpoint,options.AllowCloudDialogue,options.ApiKey);
@@ -41,7 +44,7 @@ public sealed class ModelTransport(HttpClient client,InferenceOptions options,Fu
     :"The Scout-managed model server stopped accepting connections. Check model memory requirements, GPU layers and runtime compatibility before retrying.",ex);
   }
  }
- public async Task<JsonObject> CompleteAsync(string model,string endpoint,string system,JsonObject source,JsonNode schema,CancellationToken ct) {
+ public async Task<JsonObject> CompleteAsync(string model,string endpoint,string system,JsonObject source,JsonNode schema,CancellationToken ct,string purpose="Analyzing dialogue") {
   var uri=ValidateEndpoint(endpoint);
   if(string.IsNullOrWhiteSpace(model))throw new InvalidOperationException("Configure an AI model in Settings to identify unresolved files.");
   if(beforeRequest!=null)await beforeRequest(ct);
@@ -67,6 +70,8 @@ public sealed class ModelTransport(HttpClient client,InferenceOptions options,Fu
   using var request=new HttpRequestMessage(HttpMethod.Post,uri){Content=JsonContent.Create(payload)};
   if(!local)request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",options.ApiKey);
   requests++;
+  await using var status=new ModelRequestActivity(activity,requests,purpose,sourceName.Value??"",options.Provider,uri,ct);
+  try {
   using var response=await SendAsync(request,ct);
   if(!response.IsSuccessStatusCode)throw ModelRequestError.Create(response.StatusCode,await response.Content.ReadAsStringAsync(ct),system.Length+sourceText.Length,options.MaxOutputTokens);
   var body=JsonNode.Parse(await response.Content.ReadAsStringAsync(ct))??throw new InvalidDataException("Empty model response.");
@@ -85,6 +90,10 @@ public sealed class ModelTransport(HttpClient client,InferenceOptions options,Fu
    if(!string.IsNullOrWhiteSpace(choice["message"].Text("refusal")))throw new InvalidDataException("Model declined this request.");
    content=choice["message"].Text("content");
   }
-  return JsonNode.Parse(content)?.AsObject()??throw new InvalidDataException("Invalid model JSON.");
+  var result=JsonNode.Parse(content)?.AsObject()??throw new InvalidDataException("Invalid model JSON.");
+  await status.FinishAsync("Model response received");return result;
+  }catch(OperationCanceledException) when(ct.IsCancellationRequested){await status.FinishAsync("Model request cancelled");throw;}
+  catch(ModelRequestTimeoutException){await status.FinishAsync("Model request timed out");throw;}
+  catch{await status.FinishAsync("Model request failed");throw;}
  }
 }

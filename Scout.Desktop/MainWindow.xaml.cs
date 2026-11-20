@@ -69,7 +69,7 @@ public partial class MainWindow : Window
         FileCount.Text=report.Array("files").Count.ToString();EpisodeCount.Text=groups.SelectMany(g=>g.Episodes).Select(e=>e.Id).Distinct().Count().ToString();
         DuplicateCount.Text=groups.Sum(g=>g.Copies-1).ToString();ReviewCount.Text=groups.Count(g=>g.Category=="Unresolved").ToString();
         var paths=groups.SelectMany(g=>g.Rows).Select(r=>r.Text("path")).ToList();
-        if(paths.Count>0) {
+        if(paths.Count>0&&workspace==null) {
             var root=Path.GetDirectoryName(Path.GetFullPath(paths[0]))!;
             while(paths.Any(p=>!PreviewPlanner.Within(p,root)))root=Path.GetDirectoryName(root)??throw new InvalidDataException("Files do not share a library root.");
             if(Path.GetFileName(root).StartsWith("Season ",StringComparison.OrdinalIgnoreCase)||Path.GetFileName(root).Equals("Specials",StringComparison.OrdinalIgnoreCase))root=Path.GetDirectoryName(root)!;
@@ -81,7 +81,7 @@ public partial class MainWindow : Window
         }
         outputPath=Path.GetDirectoryName(reportPath)!;catalogPath="";
         var catalog=Path.Combine(outputPath,"catalog.json");if(ScoutStorage.Exists(catalog))catalogPath=catalog;
-        ResultNote.Text=$"{groups.Count(g=>g.Feature)} non-episode feature(s) · select a row for dialogue evidence";
+        ResultNote.Text=$"{groups.Count(g=>g.Feature)} non-episode feature(s) · {groups.Count(g=>g.Compilation!=null)} play-all compilation(s) · {groups.Count(g=>g.NotProcessed)} not processed · select a row for dialogue evidence";
         if(!openingWorkspace&&workspace!=null) {
             workspace.Report=Path.GetFullPath(path);workspace.Name=SeriesName.Text;workspace.Library=LibraryPath.Text;workspace.Catalog=catalogPath;workspace.Status="Ready for review";
             RecordEvent($"{FileCount.Text} files · {EpisodeCount.Text} episode assignments · {ReviewCount.Text} unresolved groups. Results ready for review.");RefreshHistory();
@@ -91,7 +91,7 @@ public partial class MainWindow : Window
     private void FilterRows() {
         if(ResultsGrid==null||Search==null||Filter==null)return;
         string query=Search.Text.Trim();int filter=Filter.SelectedIndex;
-        ResultsGrid.ItemsSource=groups.Where(g=>(filter switch{1=>g.Episode!=null,2=>g.Duplicate,3=>g.Feature,4=>g.Category=="Unresolved",_=>true})&&
+        ResultsGrid.ItemsSource=groups.Where(g=>(filter switch{1=>g.Episode!=null,2=>g.Duplicate,3=>g.Feature,4=>g.Category=="Unresolved",5=>g.Compilation!=null,6=>g.NotProcessed,_=>true})&&
             (query.Length==0||(g.Code+" "+g.Title+" "+string.Join(" ",g.Rows.Select(r=>r.Text("path")))).Contains(query,StringComparison.OrdinalIgnoreCase))).ToList();
     }
     private void FilterChanged(object sender,SelectionChangedEventArgs e)=>FilterRows();
@@ -130,9 +130,10 @@ public partial class MainWindow : Window
         try {Data.Read(path);if(!EnsureDraftScout())return;dialoguePath=path;SaveDraft();}catch(Exception ex){Error(ex);}
     }
     private void SetBusy(bool value) {
+        if(!value)ClearModelActivity();
         RestartRunButton.IsEnabled=!value;DeleteRunButton.IsEnabled=!value;UndoDeleteButton.IsEnabled=!value;HistoryList.IsEnabled=!value;SettingsTabs.IsEnabled=!value;SettingsSaveButton.IsEnabled=!value;LibraryPage.IsEnabled=!value;
         CancelButton.IsEnabled=value;Progress.IsIndeterminate=value;Progress.Visibility=value?Visibility.Visible:Visibility.Collapsed;
-        RefreshScoutActions();RefreshMoveSelection();RefreshResolutionActions();
+        RefreshScoutActions();RefreshMoveSelection();RefreshResolutionActions();RefreshRunOptions();
         ProcessingActionText.Text=pauseRequest==null?"Cancel processing":"Pause Scout";
         System.Windows.Automation.AutomationProperties.SetName(CancelButton,ProcessingActionText.Text);
         if(value||workspace?.Status!="Paused")PauseNotice.Visibility=Visibility.Collapsed;
@@ -150,10 +151,11 @@ public partial class MainWindow : Window
         try {
             if(restart&&(workspace==null||string.IsNullOrWhiteSpace(workspace.Model)))throw new InvalidOperationException("Resume Scout is available for saved dialogue-identification runs. Use Identify episodes to start a new Scout.");
             var preferences=SaveSettingsCore();
-            if(!preferences.UseSubtitleMatching&&string.IsNullOrWhiteSpace(preferences.Model))throw new ArgumentException("Choose a model ID in Settings.");
-            string? key=preferences.Provider is "openai" or "compatible"?settingsStore.ReadKey(preferences.CredentialId):null;
-            if(!preferences.UseSubtitleMatching)ConnectionPolicy.Validate(preferences.Provider,preferences.Endpoint,preferences.AllowCloudDialogue,key);
             if(workspace==null)throw new ArgumentException("Create or select a Scout first.");
+            if(!preferences.UseSubtitleMatching&&!workspace.UseAiFallback)throw new ArgumentException("Enable subtitle matching in Settings, or enable Use AI for unresolved files for this Scout.");
+            if(!preferences.UseSubtitleMatching&&workspace.UseAiFallback&&string.IsNullOrWhiteSpace(preferences.Model))throw new ArgumentException("Choose a model ID in Settings.");
+            string? key=preferences.Provider is "openai" or "compatible"?settingsStore.ReadKey(preferences.CredentialId):null;
+            if(!preferences.UseSubtitleMatching&&workspace.UseAiFallback)ConnectionPolicy.Validate(preferences.Provider,preferences.Endpoint,preferences.AllowCloudDialogue,key);
             if(!ScoutStorage.Exists(catalogPath)&&workspace.SeriesIdentity==null)throw new ArgumentException("Select a show or import an episode guide before identifying episodes.");
             if(!Directory.Exists(LibraryPath.Text)||PreviewPlanner.Within(outputPath,LibraryPath.Text))throw new ArgumentException("The source folder must exist and must be separate from internal Scout storage.");
             if(!restart&&!EnsureDraftScout())return;
@@ -173,8 +175,8 @@ public partial class MainWindow : Window
             }
             catalogPath=workspaces.SaveCatalog(workspace,guideTarget);
             Log(newFilesOnly?"Scanning for added videos; saved results will be retained.":reviewIssues?"Reviewing unresolved files and competing recordings using saved evidence.":reanalyze?$"Reanalyzing {selectedFiles.Count} videos with the current model; reusing unchanged dialogue and fingerprints.":restart?$"Resuming {selectedFiles.Count} selected videos; reusing successful results for unchanged files.":$"Identifying {selectedFiles.Count} selected videos from dialogue.");
-            RecordEvent($"Started with {preferences.Provider} / {preferences.Model}.");
-            Log($"Model request timeout: {preferences.EffectiveTimeoutSeconds/60.0:0.#} minutes per request. Timeouts are held for retry; they do not cancel the Scout.");
+            RecordEvent(workspace.UseAiFallback?$"AI fallback enabled: {preferences.Provider} / {preferences.Model}.":"AI fallback is off; unresolved files will remain available for later review.");
+            if(workspace.UseAiFallback)Log($"Model request timeout: {preferences.EffectiveTimeoutSeconds/60.0:0.#} minutes per request. Timeouts are held for retry; they do not cancel the Scout.");
             var root=LibraryPath.Text;var catalog=catalogPath;var output=outputPath;
             var dialogue=string.IsNullOrWhiteSpace(dialoguePath)?null:dialoguePath;
             bool aiReady=false;
@@ -193,10 +195,10 @@ public partial class MainWindow : Window
                 aiReady=true;
             }
             string endpoint=preferences.Provider=="managed"?$"http://127.0.0.1:{new Uri(preferences.LocalEndpoint).Port}/v1/chat/completions":preferences.Endpoint;
-            var settings=new MatchSettings(root,catalog,output,preferences.Model,endpoint,preferences.Ffmpeg,preferences.Ffprobe,dialogue,selectedFiles,workspace.SeriesIdentity,restart,reanalyze,reviewIssues,newFilesOnly,workspace.SelectionScope);
+            var settings=new MatchSettings(root,catalog,output,preferences.Model,endpoint,preferences.Ffmpeg,preferences.Ffprobe,dialogue,selectedFiles,workspace.SeriesIdentity,restart,reanalyze,reviewIssues,newFilesOnly,workspace.SelectionScope,workspace.ContentOptions,workspace.UseAiFallback);
             using var handler=new HttpClientHandler {AllowAutoRedirect=false};
             using var http=new HttpClient(handler){Timeout=TimeSpan.FromSeconds(preferences.EffectiveTimeoutSeconds)};
-            matcher=new DialogueMatcher(http,preferences.Inference(key),EnsureAi);
+            matcher=new DialogueMatcher(http,preferences.Inference(key),EnsureAi,BeginModelActivity());
             usageOutput=Path.Combine(output,"usage.json");
             Scout.Core.Subtitles.SubtitleMatcher? subtitleMatcher=null;
             if(preferences.UseSubtitleMatching) {
@@ -204,7 +206,7 @@ public partial class MainWindow : Window
                 var source=new Scout.Core.Subtitles.SubdlReferences(subtitleCache,settingsStore.ReadKey(SubtitleCredentials.Subdl),workspace.SeriesIdentity?.Provider=="tmdb"?settingsStore.ReadKey("metadata|tmdb"):null);
                 subtitleMatcher=new(source,subtitleCache);
             }
-            var pipeline=new MediaPipeline(matcher,subtitles:subtitleMatcher);
+            var pipeline=new MediaPipeline(matcher,subtitles:subtitleMatcher,speech:preferences.Speech.Enabled?new SpeechTranscriber(preferences.Speech,preferences.ModelDirectory):null);
             var path=await Task.Run(()=>pipeline.RunAsync(settings,progress,token,pauseRequest),token);
             LoadReport(path);ShowPage("Results");Status.Text="Matching complete. Unresolved files are held for review.";
         }catch(ScoutPausedException){FinishPaused(forceStopRequested);}
@@ -226,7 +228,7 @@ public partial class MainWindow : Window
         try {
             if(sender is not Button {Content: "Regenerate preview"}&&RestorePreview()){ShowPage("Preview");Status.Text="Saved move preview restored.";return;}
             if(string.IsNullOrWhiteSpace(SeriesName.Text))throw new ArgumentException("Enter a series name on the Library page.");
-            var root=LibraryPath.Text;var series=SeriesName.Text;var output=Path.Combine(outputPath,"move-preview");
+            var root=LibraryPath.Text;var series=SeriesName.Text;var output=Path.Combine(outputPath,"move-preview");var destination=SelectedDestinationRoot();var contentOptions=workspace?.ContentOptions;
             if(PreviewPlanner.Within(output,root))throw new ArgumentException("Preview output must be outside the video library.");
             var catalog=string.IsNullOrWhiteSpace(catalogPath)?[]:Data.Catalog(catalogPath);
             var snapshot=report.DeepClone().AsObject();
@@ -237,7 +239,7 @@ public partial class MainWindow : Window
                 await Task.Run(()=>MoveExecutor.RecoverAsync(reportPath,root,recoveryProgress,CancellationToken.None,appSettings.Ffmpeg));
                 LoadReport(reportPath);snapshot=report!.DeepClone().AsObject();
             }
-            var plan=await Task.Run(()=>PreviewPlanner.Create(snapshot,root,series,catalog,naming:naming,identity:workspace?.SeriesIdentity));
+            var plan=await Task.Run(()=>PreviewPlanner.Create(snapshot,root,series,catalog,naming:naming,identity:workspace?.SeriesIdentity,destinationRoot:destination,contentOptions:contentOptions));
             previewHtml=PreviewPlanner.Write(plan,output);PreviewCache.Save(output,CurrentPreviewSignature(),plan);DisplayPreview(plan);
             if(workspace!=null){workspace.Preview=previewHtml;RecordEvent("Move preview refreshed from saved results and move history.");RefreshHistory();}
             ShowPage("Preview");Status.Text="Preview ready. Select pending files to move or rename.";

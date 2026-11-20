@@ -12,6 +12,7 @@ using Scout.Core;
 namespace Scout.Desktop;
 
 public sealed class NamingTemplateEditor : TextEditor {
+ public bool DestinationTokensOnly {get;set;}
  private CompletionWindow? completion;
  public NamingTemplateEditor() {
   FontFamily=new FontFamily("Consolas");FontSize=15;
@@ -44,6 +45,7 @@ public sealed class NamingTemplateEditor : TextEditor {
   if(!IsEnabled)return;
   completion?.Close();Focus();TextArea.Focus();
   var context=NamingEditorLanguage.Complete(Text,CaretOffset);
+  if(context?.Kind=="token"&&DestinationTokensOnly)context=context with {Items=context.Items.Where(i=>DestinationTemplate.Tokens.Contains(i.Name)).ToArray()};
   if(context==null||context.Items.Count==0)return;
   var window=new CompletionWindow(TextArea) {
    StartOffset=context.Start,EndOffset=CaretOffset,Width=360,MaxHeight=260,

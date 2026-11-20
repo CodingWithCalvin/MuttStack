@@ -16,7 +16,7 @@ public sealed partial class DialogueMatcher
             source["stage_instructions"]=Asset("retrieval-prompt.txt");
             source["task"]=entire?"Broader search: complete original dialogue. Select candidates or abstain.":"Retrieval search: selected original passages and a provisional catalog shortlist. Set search_more if more context or catalog entries are needed.";
             var schema=JsonNode.Parse(Asset("retrieval-schema.json"))!;schema["properties"]!["candidates"]!["items"]!["enum"]=JsonSerializer.SerializeToNode(episodes.Select(e=>e.Id));
-            var raw=await transport.CompleteAsync(model,endpoint,Asset("evidence-system.txt"),source,schema,ct);
+            var raw=await transport.CompleteAsync(model,endpoint,Asset("evidence-system.txt"),source,schema,ct,entire?"Searching the full episode guide":"Finding episode candidates");
             if(raw.Count!=2||raw["candidates"] is not JsonArray ids||ids.Count>2||raw["search_more"] is not JsonValue flag||!flag.TryGetValue<bool>(out var more))throw new InvalidDataException("Invalid candidate retrieval response.");
             var selected=new List<Episode>();
             foreach(var node in ids) {
@@ -82,7 +82,7 @@ public sealed partial class DialogueMatcher
             var source=EvidenceInput(spans,blocks.Count,included);source["candidates"]=guides.DeepClone();source["catalog_relationship"]=relationship.DeepClone();
             source["stage_instructions"]=Asset("span-grounded-prompt.txt")+(!full?"\nThis request contains selected original passages with explicit gaps, NOT the complete dialogue. Return full_dialogue_required=true if missing context is needed for any guide statement, chronology, another story, promo/recap distinction or recording completeness. Missing passages cannot establish that events are absent. Only a supported single complete episode can take the evidence route; all other outcomes receive full dialogue. Never claim to have inspected omitted passages.":"");
             source["task"]=full?(pass==0?"Audit every guide statement and classify the COMPLETE recording. Cite span IDs only.":"Independently audit every guide statement and classify the COMPLETE recording. Cite span IDs only."):"Audit the supplied evidence. Request the complete dialogue if it cannot safely establish one episode and its coverage.";
-            var raw=await transport.CompleteAsync(model,endpoint,Asset("evidence-system.txt"),source,schema,ct);
+            var raw=await transport.CompleteAsync(model,endpoint,Asset("evidence-system.txt"),source,schema,ct,$"Verifying guide evidence · pass {pass+1}/{passes}");
             rawAudits.Add(new JsonObject{["scope"]=source["scope"]!.DeepClone(),["response"]=raw.DeepClone()});
             var decision=raw.DeepClone().AsObject();
             if(!full) {

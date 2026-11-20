@@ -21,15 +21,20 @@ public sealed class LocalRuntime : IAsyncDisposable
   var p=Process.Start(start)??throw new IOException("Cannot start local runtime.");var runtime=new LocalRuntime(p);
   p.OutputDataReceived+=(_,_)=>{};p.ErrorDataReceived+=(_,_)=>{};p.BeginOutputReadLine();p.BeginErrorReadLine();
   try {
-   using var http=new HttpClient(new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(2)};progress.Report("Loading local model…");
+   using var http=new HttpClient(new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(2)};
+   await WaitUntilReadyAsync(http,new Uri($"http://127.0.0.1:{uri.Port}/health"),()=>p.HasExited,progress,ct);
+   return runtime;
+  }catch{await runtime.DisposeAsync();throw;}
+ }
+ internal static async Task WaitUntilReadyAsync(HttpClient http,Uri health,Func<bool> exited,IProgress<string> progress,CancellationToken ct,TimeSpan? delay=null) {
+   progress.Report("Loading local model…");
    for(int n=0;n<300;n++) {
-    ct.ThrowIfCancellationRequested();if(p.HasExited)throw new IOException("Local runtime exited. Check compatibility, RAM, GPU layers and context size.");
-    try{using var response=await http.GetAsync($"http://127.0.0.1:{uri.Port}/health",ct);if(response.IsSuccessStatusCode)return runtime;}
+    ct.ThrowIfCancellationRequested();if(exited())throw new IOException("Local runtime exited. Check compatibility, RAM, GPU layers and context size.");
+    try{using var response=await http.GetAsync(health,ct);if(response.IsSuccessStatusCode){progress.Report("Local model ready. Starting analysis…");return;}}
     catch(HttpRequestException){}catch(TaskCanceledException) when(!ct.IsCancellationRequested){}
-    await Task.Delay(2000,ct);
+    await Task.Delay(delay??TimeSpan.FromSeconds(2),ct);
    }
    throw new TimeoutException("Local model did not become ready within 10 minutes.");
-  }catch{await runtime.DisposeAsync();throw;}
  }
  public static IReadOnlyList<string> Arguments(AppSettings s,int port) {
   s.Validate();

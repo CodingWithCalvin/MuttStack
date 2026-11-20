@@ -30,19 +30,21 @@ public static class CollectionResolver
                 bool combined=MultipartEvidence.Combined(row);
                 bool bad=!forced&&((candidates.Count>1||row["reasoning"].Text("coverage")=="combined")&&!combined||row["reasoning"].Text("coverage")=="partial"&&!MultipartEvidence.Partial(row)||Subtitles.SubtitleResult.IsSubtitle(row)&&!Subtitles.SubtitleResult.Valid(row,identity:report["series_identity"]?.Deserialize<SeriesIdentity>(Data.Options)));
                 invalid|=bad;
-                bool error=row.Bool("source_changed")||row.Text("relocation_error")!=""||row.Bool("move_pending")||!forced&&(!string.IsNullOrEmpty(row.Text("error"))||row.Bool("conflict_review_pending")||row.Text("conflict_review_error")!=""||row.Bool("claim_review_pending")||row.Text("claim_review_error")!="");blocked|=error;
+                bool error=row.Bool("source_changed")||row.Text("relocation_error")!=""||row.Bool("move_pending")||!forced&&(!string.IsNullOrEmpty(row.Text("error"))&&!DialogueAvailability.Unavailable(row)||row.Bool("conflict_review_pending")||row.Text("conflict_review_error")!=""||row.Bool("claim_review_pending")||row.Text("claim_review_error")!="");blocked|=error;
                 var chosen=missing||staleOverride?[]:forced?new List<Episode>{Data.Episode(decision!["episode"]!)}:(bad||combined?candidates:candidates.Take(1)).Select(c=>Data.Episode(c!["episode"]!)).ToList();
                 foreach(var e in chosen)claims[e.Id]=e;
                 votes.Add(chosen.Count>0&&!error?string.Join(",",chosen.Select(e=>e.Id))+(!forced&&MultipartEvidence.Partial(row)?":partial":":complete"):null);
             }
             if(staleOverride)claims.Clear();
             var status=missing?"source_unavailable":staleOverride?"stale_human_override":invalid?"invalid_model_output":blocked?"source_or_model_error":
+                human==null&&entries.All(DialogueAvailability.Unavailable)?"not_processed":
                 entries.Count>1&&votes.Distinct().Count()>1?"unresolved_conflict":
                 votes.Distinct().Count()==1&&votes[0]!=null?(human==null&&entries.All(MultipartEvidence.Partial)?"partial_unverified":"suggested"):"unassigned";
             groups.Add(new RecordingGroup {Id=Hash(string.Join("\n",entries.Select(r=>r.Text("path")).Order(StringComparer.Ordinal)))[..16],
                 Rows=entries,Claims=claims.Values.ToList(),Status=status,Episodes=status=="suggested"?claims.Values.ToList():[],HumanDecision=human});
         }
         DialogueCopies.Merge(groups);
+        CompilationEvidence.Apply(groups);
         var winners=groups.Where(g=>g.HumanDecision!=null&&g.Status=="suggested").GroupBy(g=>g.Episode!.Id)
             .ToDictionary(g=>g.Key,g=>g.OrderByDescending(x=>HumanResolution.Order(report,x.HumanDecision!)).First());
         foreach(var group in groups.Where(g=>g.Claims.Any(e=>winners.TryGetValue(e.Id,out var winner)&&winner!=g))) {

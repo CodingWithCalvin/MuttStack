@@ -199,6 +199,11 @@ internal static class Program
                 finally { Set("operation", null); Call("SetBusy", false); }
             }
             Console.WriteLine("PASS Force stop is limited to resumable identification work.");
+            ModelActivityDesktopTests.Run(window,store);
+            RunOptionsDesktopTests.Run(window,store);
+            DestinationSettingsDesktopTests.Run(window,store);
+            DialogueAvailabilityDesktopTests.Run(window,store);
+            SpeechSettingsDesktopTests.Run(window);
             window.Close();
             InboxDesktopTests.Run(root);
             app.Shutdown();

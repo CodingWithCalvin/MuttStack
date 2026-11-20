@@ -5,14 +5,14 @@ using System.Text.RegularExpressions;
 namespace Scout.Core;
 
 public sealed record MoveUpdate(JsonObject Report,MovePlan Plan,string Message);
-public static class MoveExecutor {
+public static partial class MoveExecutor {
  public static bool HasPending(JsonObject report)=>report.Array("moves").Any(m=>m.Text("state") is "prepared" or "attention");
  public static void RequireSettled(JsonObject report) {
   if(HasPending(report))throw new InvalidOperationException("An interrupted move needs reconciliation. Generate the move preview before analyzing or moving more files.");
  }
- private static void Paths(string root,string source,string destination) {
-  if(!PreviewPlanner.Within(source,root)||!PreviewPlanner.Within(destination,root)||PreviewPlanner.Same(source,destination))
-   throw new InvalidOperationException("Move must have distinct source and destination paths inside this Scout's source folder.");
+ private static void Paths(string root,string destinationRoot,string source,string destination) {
+  if((!PreviewPlanner.Within(source,root)&&!PreviewPlanner.Within(source,destinationRoot))||!PreviewPlanner.Within(destination,destinationRoot)||PreviewPlanner.Same(source,destination))
+   throw new InvalidOperationException("Move paths must stay within this Scout's selected source and destination roots.");
   if(PreviewPlanner.HasReparseAncestor(source)||PreviewPlanner.HasReparseAncestor(destination))
    throw new InvalidOperationException("Moves through symbolic links or junctions are held.");
  }
@@ -45,14 +45,16 @@ public static class MoveExecutor {
    string source=entry.Text("source"),destination=entry.Text("destination");
    var row=report.Array("files").OfType<JsonObject>().SingleOrDefault(r=>PreviewPlanner.Same(r.Text("path"),source));
    try {
-    Paths(root,source,destination);
+    Paths(root,entry.Text("destination_root",root),source,destination);
     if(row==null||CollectionResolver.FingerprintKey(row["primary_fingerprint"])!=entry.Text("fingerprint"))
      throw new InvalidOperationException("Saved recording identity no longer matches the pending move.");
     if(File.Exists(source)&&!File.Exists(destination)&&!Directory.Exists(destination)) {
      row.Remove("move_pending");entry["state"]="failed";entry["error"]="Interrupted before the move completed. Select this file to retry.";
     } else if(!File.Exists(source)&&File.Exists(destination)) {
      progress.Report("Reconciling moved recording: "+Path.GetFileName(destination));
-     if(entry["verification"] is JsonObject proof) {
+     if(entry.Text("transfer_method")=="verified-copy-v1") {
+      if(new FileInfo(destination).Length!=entry["copy_length"]!.GetValue<long>()||await Hash(destination,ct)!=entry.Text("sha256"))throw new IOException("Recovered destination copy does not match the complete saved checksum.");
+     } else if(entry["verification"] is JsonObject proof) {
       if(proof.Text("file_id").Length>0) {
        if(!RenameVerification.Matches(destination,proof,requireIdentity:true))
         throw new IOException("Destination identity, metadata or sampled fingerprint cannot prove this interrupted rename.");
@@ -87,21 +89,22 @@ public static class MoveExecutor {
  public static async Task<JsonObject> ApplyAsync(string reportPath,MovePlan preview,IReadOnlyCollection<string> selected,IReadOnlyList<Episode> catalog,IProgress<MoveUpdate> progress,CancellationToken ct,Action<JsonObject>? checkpoint=null) {
   await Task.CompletedTask;
   var report=Data.Read(reportPath);RequireSettled(report);
-  if(PreviewPlanner.Within(reportPath,preview.LibraryRoot))throw new InvalidOperationException("Scout storage must be outside the video folder.");
+  if(PreviewPlanner.Within(reportPath,preview.LibraryRoot)||PreviewPlanner.Within(reportPath,preview.DestinationRoot))throw new InvalidOperationException("Scout storage must be outside the video folder.");
   var wanted=selected.Select(Path.GetFullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
   if(wanted.Count==0)throw new InvalidOperationException("Select at least one pending move.");
   var requested=preview.Items.Where(i=>i.Action=="rename/move"&&wanted.Contains(Path.GetFullPath(i.Source))).ToList();
   if(requested.Count!=wanted.Count)throw new InvalidOperationException("Only pending, unblocked moves can be selected.");
-  var fresh=PreviewPlanner.Create(report,preview.LibraryRoot,preview.Series,catalog,naming:preview.Naming,identity:preview.SeriesIdentity,verifyOnly:wanted);
+  var fresh=PreviewPlanner.Create(report,preview.LibraryRoot,preview.Series,catalog,naming:preview.Naming,identity:preview.SeriesIdentity,verifyOnly:wanted,destinationRoot:preview.DestinationRoot,contentOptions:preview.ContentOptions);
   foreach(var item in requested) {
    var now=fresh.Items.SingleOrDefault(i=>i.Action=="rename/move"&&PreviewPlanner.Same(i.Source,item.Source));
    if(now==null||now.Destination==null||item.Destination==null||!PreviewPlanner.Same(now.Destination,item.Destination))
     throw new InvalidOperationException("The preview is out of date. Regenerate it before moving files.");
   }
+  report["source_root"]=preview.LibraryRoot;report["destination_root"]=preview.DestinationRoot;report["content_options"]=JsonSerializer.SerializeToNode(preview.ContentOptions,Data.Options);
   void Save(){if(checkpoint!=null)checkpoint(report);else Data.Save(reportPath,report);}
   var displayed=preview;
   void Notify(string message,bool refresh=true) {
-   if(refresh)displayed=PreviewPlanner.Create(report,preview.LibraryRoot,preview.Series,catalog,checkSources:false,naming:preview.Naming,identity:preview.SeriesIdentity);
+   if(refresh)displayed=PreviewPlanner.Create(report,preview.LibraryRoot,preview.Series,catalog,checkSources:false,naming:preview.Naming,identity:preview.SeriesIdentity,destinationRoot:preview.DestinationRoot,contentOptions:preview.ContentOptions);
    progress.Report(new(report.DeepClone().AsObject(),displayed,message));
   }
   if(report["moves"] is not JsonArray)report["moves"]=new JsonArray();
@@ -119,12 +122,12 @@ public static class MoveExecutor {
    remaining.Remove(item);
    string source=Path.GetFullPath(item.Source),destination=Path.GetFullPath(item.Destination!);
    var row=report.Array("files").OfType<JsonObject>().Single(r=>PreviewPlanner.Same(r.Text("path"),source));
-   var entry=new JsonObject{["id"]=Guid.NewGuid().ToString("N"),["source"]=source,["destination"]=destination,["state"]="failed",["item"]=JsonSerializer.SerializeToNode(item,Data.Options),["fingerprint"]=CollectionResolver.FingerprintKey(row["primary_fingerprint"]),["started_at"]=DateTimeOffset.UtcNow.ToString("O")};
+   var entry=new JsonObject{["id"]=Guid.NewGuid().ToString("N"),["source"]=source,["destination"]=destination,["state"]="failed",["item"]=JsonSerializer.SerializeToNode(item,Data.Options),["fingerprint"]=CollectionResolver.FingerprintKey(row["primary_fingerprint"]),["started_at"]=DateTimeOffset.UtcNow.ToString("O"),["source_root"]=preview.LibraryRoot,["destination_root"]=preview.DestinationRoot};
    report.Array("moves").Add(entry);
    FileStream? guard=null;
    try {
     try {
-     Paths(preview.LibraryRoot,source,destination);
+     Paths(preview.LibraryRoot,preview.DestinationRoot,source,destination);
      Notify("Checking saved fingerprint (small samples): "+Path.GetFileName(source),refresh:false);
      guard=RenameVerification.OpenGuard(source);
      if(!RunRecovery.SourceUnchanged(row))throw new IOException("Source changed since identification. Re-identify it before moving.");
@@ -138,21 +141,26 @@ public static class MoveExecutor {
     Save(); // Durable intent must exist before changing any media path.
     bool moved=false;
     try {
-     Paths(preview.LibraryRoot,source,destination);
+     Paths(preview.LibraryRoot,preview.DestinationRoot,source,destination);
      if(!RunRecovery.SourceUnchanged(row))throw new IOException("Source changed before the move.");
      if(File.Exists(destination)||Directory.Exists(destination))throw new IOException("Destination already exists.");
      Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-     Paths(preview.LibraryRoot,source,destination);
+     Paths(preview.LibraryRoot,preview.DestinationRoot,source,destination);
      Notify("Renaming without copying video data: "+Path.GetFileName(source),refresh:false);
-     RenameVerification.Move(source,destination);moved=true;
+     try {RenameVerification.Move(source,destination);}
+     catch(CrossVolumeMoveException) {await CopyAcrossVolumesAsync(entry,row,source,destination,guard!,Save,message=>Notify(message,refresh:false),ct);}
+     moved=true;
      // Finish and save this file even when a stop was requested after the rename.
      Notify("Checking renamed file identity and samples: "+Path.GetFileName(destination),refresh:false);
-     if(!RenameVerification.Matches(destination,entry["verification"]!,requireIdentity:false))
+     if(!RenameVerification.Matches(destination,(entry["destination_verification"]??entry["verification"])!,requireIdentity:false))
       throw new IOException("Renamed file identity or fingerprint changed; saved analysis is held pending reconciliation.");
      Commit(report,entry,row);
+    }catch(OperationCanceledException) {
+     entry["state"]=entry.Bool("copy_published")?"attention":"failed";entry["error"]="Copy cancelled before completion; the source was retained.";
+     if(!entry.Bool("copy_published"))row.Remove("move_pending");Save();throw;
     }catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or InvalidOperationException) {
-     entry["state"]=moved?"attention":"failed";entry["error"]=ex.Message;
-     if(!moved)row.Remove("move_pending");
+     bool uncertain=moved||entry.Bool("copy_published");entry["state"]=uncertain?"attention":"failed";entry["error"]=ex.Message;
+     if(!uncertain)row.Remove("move_pending");
     }
    } finally {guard?.Dispose();}
    Save(); // A failed save stops the batch; the prepared entry on disk enables recovery.

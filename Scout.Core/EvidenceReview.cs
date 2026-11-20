@@ -6,6 +6,8 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
 {
  public static EvidenceReview Create(RecordingGroup group) {
   var assessment=group.Status switch {
+   "not_processed"=>"Not processed — no readable dialogue",
+   "compilation"=>"Play-all compilation — individual recordings take priority",
    "source_unavailable"=>"Source unavailable — historical suggestion only",
    "overridden_conflict"=>"Held — another recording was assigned by the user",
    "stale_human_override"=>"Human override expired — evidence or series changed",
@@ -24,6 +26,11 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
   };
   var suggestion=group.Episode is {} episode?$"{group.Code} · {group.Title}":"No episode assignment";
   var sections=new List<EvidenceSection>();
+  if(group.Compilation is {} compilation) {
+   sections.Add(new("Compilation evidence",compilation.Summary));
+   sections.Add(new("Contained recordings",string.Join("\n",compilation.Parts.Select(p=>$"{p.Path} ({TimeSpan.FromSeconds(p.Duration):hh\\:mm\\:ss})"))));
+   sections.Add(new("Previous suggestions","Saved model suggestions and errors below are retained as history. This compilation does not reserve any episode."));
+  }
   if(group.Status=="source_unavailable")sections.Add(new("Why this is held","The saved source is missing and no verified replacement was found. Its history is retained, but it does not reserve an episode or block an available recording."));
   if(group.Status=="overridden_conflict")sections.Add(new("Human conflict resolution","A forceful assignment gives this episode to another recording. This file remains held; its original model suggestions are preserved."));
   if(group.HumanDecision is {} human)sections.Add(new("Human override",human.Text("recorded_at")+"\n"+human.Text("note")+"\nThe model's original assessment below was not edited. Undo override restores automatic conflict handling."));
@@ -37,6 +44,7 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
   }
   foreach(var row in group.Rows) {
    sections.Add(new("Recording",row.Text("path")));
+   if(row["transcription"] is JsonObject speech)sections.Add(new("Machine transcription",$"{speech.Text("name")} · {speech.Text("device")} · audio track {speech.Int("audio_track")} · English\nGenerated locally from audio. Recognition errors are possible; model scores are not confidence in an episode assignment."));
    if(row["subtitle_match"] is JsonObject subtitle) {
     bool current=Subtitles.SubtitleResult.IsSubtitle(row);
     sections.Add(new(current?"Subtitle matching":"Subtitle stage before AI",subtitle.Text("reason")+"\n"+subtitle.Text("note")));
@@ -47,7 +55,8 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
      if(best.Array("parts").Count>0)sections.Add(new("Combined subtitle references","Separate, substantial dialogue portions occur in the expected order. Short previews and repeated parts do not qualify."));
     }
    }
-   if(!string.IsNullOrWhiteSpace(row.Text("error")))sections.Add(new("Processing error",row.Text("error")));
+   if(group.NotProcessed)sections.Add(new("Not processed",DialogueAvailability.Message(row)+" Reanalyze after adding readable subtitles or preparing local speech recognition."));
+   else if(!string.IsNullOrWhiteSpace(row.Text("error")))sections.Add(new("Processing error",row.Text("error")));
    if(row.Bool("move_pending"))sections.Add(new("Move needs reconciliation","Generate the move preview to verify the destination of an interrupted move. No assignment or further move is accepted until its location is verified."));
    if(row.Text("relocation_error")!="")sections.Add(new("File location unresolved",row.Text("relocation_error")));
    if(row.Array("path_history").Count>0)sections.Add(new("Verified path history",string.Join("\n",row.Array("path_history").Select(h=>h.Text("from")+" → "+h.Text("to")))));

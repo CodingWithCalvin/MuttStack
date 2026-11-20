@@ -23,7 +23,7 @@ public sealed partial class DialogueMatcher
         var audits=new JsonArray();var results=new List<JsonObject>();
         try {for(int pass=0;pass<2;pass++) {
             source["task"]=pass==0?"Audit every guide statement against the complete original dialogue, then make ONE joint coverage decision for the recording.":"Independently audit every guide statement against the complete original dialogue, then make ONE joint coverage decision for the recording.";
-            var raw=await transport.CompleteAsync(model,endpoint,Asset("grounded-prompt.txt"),source,schema,ct);audits.Add(raw.DeepClone());
+            var raw=await transport.CompleteAsync(model,endpoint,Asset("grounded-prompt.txt"),source,schema,ct,$"Verifying combined episodes · pass {pass+1}/2");audits.Add(raw.DeepClone());
             results.Add(GroundedRecording.Expand(raw,blocks,episodes));
         }}catch(Exception ex){ex.Data["model_attempts"]=History(ex.Message);throw;}
         string Decision(JsonObject r)=>r.Text("assessment")+":"+r.Text("coverage")+":"+string.Join(",",r.Array("matches").Select(m=>m.Int("episode_id")))+":"+

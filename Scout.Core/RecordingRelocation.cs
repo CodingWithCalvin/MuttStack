@@ -3,6 +3,22 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 namespace Scout.Core;
 public static class RecordingRelocation {
+ // Only a completed, linked journal entry can exempt a saved path from the
+ // original source root. Arbitrary external paths remain invalid selections.
+ public static bool MovedOutsideSource(JsonObject report,string path,string root) {
+  if(PreviewPlanner.Within(path,root))return false;
+  var row=report.Array("files").SingleOrDefault(r=>PreviewPlanner.Same(r.Text("path"),path));if(row==null)return false;
+  var verified=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+  foreach(var history in row.Array("path_history").Where(h=>h.Text("method")=="scout-move")) {
+   var move=report.Array("moves").SingleOrDefault(m=>m.Text("id")==history.Text("move_id")&&m.Text("state")=="completed");
+   if(move==null||!Path.IsPathFullyQualified(move.Text("destination_root"))||
+      move.Text("fingerprint")!=CollectionResolver.FingerprintKey(row["primary_fingerprint"]))continue;
+   var source=Path.GetFullPath(move.Text("source"));var destination=Path.GetFullPath(move.Text("destination"));
+   if((PreviewPlanner.Within(source,root)||verified.Contains(source))&&PreviewPlanner.Within(destination,move.Text("destination_root"))&&
+       PreviewPlanner.Same(source,history.Text("from"))&&PreviewPlanner.Same(destination,history.Text("to")))verified.Add(destination);
+  }
+  return verified.Contains(Path.GetFullPath(path));
+ }
  public static List<string> MapSelection(JsonObject report,IEnumerable<string> selected) {
   var paths=report.Array("files").SelectMany(r=>r.Array("path_history").Select(h=>(Old:Path.GetFullPath(h.Text("from")),Current:r.Text("path"))))
    .GroupBy(x=>x.Old,StringComparer.OrdinalIgnoreCase).Where(g=>g.Select(x=>x.Current).Distinct(StringComparer.OrdinalIgnoreCase).Count()==1).ToDictionary(g=>g.Key,g=>g.First().Current,StringComparer.OrdinalIgnoreCase);

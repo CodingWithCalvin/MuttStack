@@ -32,6 +32,7 @@ static class HandoffTests
             FileAt(root, "unrelated");
             var id = Offer(transport, a, b, c); var receipt = inbox.Accept(id); var runs = store.ReadAll();
             Check(receipt.NewFiles == 3 && runs.Count == 3 && runs.All(r => r.Status == "Draft" && r.SelectionScope?.Kind == "files" && r.SelectedFiles.Count == 1 && r.Report == ""));
+            Check(runs.All(r => r.DestinationMode == "default" && r.DestinationRoot == "" && r.DestinationTemplateOverride == null));
             Check(runs.Single(r => r.SeriesIdentity?.Provider == "tvdb").SeriesIdentity?.Overview == "Overview");
             Check(runs.Single(r => r.SeriesIdentity == null).Setup?.Mode == "discover");
             Check(runs.SelectMany(r => r.SelectedFiles).Order().SequenceEqual(new[] { a.Path, b.Path, c.Path }.Order()));

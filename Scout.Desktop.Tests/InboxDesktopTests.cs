@@ -47,7 +47,7 @@ static class InboxDesktopTests
             Click("AcceptHandoffButton"); var run = store.ReadAll().Single();
             Check(run.Status == "Draft" && run.SeriesIdentity?.Provider == "tmdb" && run.SelectedFiles.Count == 1 && C<Border>("InboxBadge").Visibility == Visibility.Collapsed, "Accept saves a waiting Scout and clears the inbox badge");
             C<ListBox>("HistoryList").SelectedItem = C<ListBox>("HistoryList").Items.Cast<RunWorkspace>().Single(r => r.Id == run.Id);
-            Check(C<TextBlock>("SelectionSummary").Text.Contains("episode.mkv") && store.ReadAll().Single().SeriesIdentity?.Provider == "tmdb", "Opening accepted Scout restores its exact selection and provider");
+            Check(C<TextBlock>("SelectionSummary").Text.Contains("episode.mkv") && store.ReadAll().Single().SeriesIdentity?.Provider == "tmdb" && run.DestinationMode == "default" && C<ComboBox>("DestinationChoice").SelectedIndex == 0, "Opening accepted Scout restores its exact selection, provider and global destination default");
             var declined = Offer("decline");
             typeof(MainWindow).GetMethod("RefreshInbox", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
             Click("NavInbox"); C<ListBox>("HandoffList").SelectedIndex = 0; Click("DeclineHandoffButton");

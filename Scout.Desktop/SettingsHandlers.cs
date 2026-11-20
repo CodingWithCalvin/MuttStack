@@ -27,7 +27,7 @@ public partial class MainWindow
    ManagedRuntimeStatus.Text=installed.Status;ManagedRuntimePath.Text=installed.InstalledPath;
   }catch(Exception ex) when(ex is IOException or ArgumentException or InvalidOperationException or UnauthorizedAccessException){ManagedRuntimeStatus.Text="Could not check managed runtime: "+ex.Message;ManagedRuntimePath.Clear();}
  }
- private void RuntimeLocationChanged(object sender,TextChangedEventArgs e){RefreshManagedRuntime();RefreshRequestTimeoutHint();}
+ private void RuntimeLocationChanged(object sender,TextChangedEventArgs e){RefreshManagedRuntime();RefreshRequestTimeoutHint();RefreshSpeechSettings();}
  private void RuntimeProfileChanged(object sender,SelectionChangedEventArgs e) {
   if(DownloadProfileChoice.SelectedItem is ModelProfile profile) {
    if(ModelProfileHint!=null)ModelProfileHint.Text=profile.Status+" Download: "+(profile.Bytes/1e9).ToString("F1")+" GB. SHA256 verified."+(profile.EnableThinking?" Model default: thinking enabled. Override with the Thinking setting.":"");
@@ -95,11 +95,13 @@ public partial class MainWindow
   OpenAiModelEntry.Text=appSettings.OpenAiModel;CompatibleModelEntry.Text=appSettings.Provider=="local"?appSettings.LocalModel:appSettings.CompatibleModel;CompatibleEndpointEntry.Text=appSettings.Provider=="local"?appSettings.LocalEndpoint:appSettings.CompatibleEndpoint;
   CloudConsent.IsChecked=appSettings.AllowCloudDialogue;ModelFolderEntry.Text=appSettings.ModelDirectory;ModelFileEntry.Text=appSettings.ModelFile;
   SubtitleMatchingEntry.IsChecked=appSettings.UseSubtitleMatching;
+  LoadSpeechSettings();
   ThinkingChoice.SelectedIndex=appSettings.ThinkingEnabled switch {true=>1,false=>2,_=>0};
   ThreadsEntry.Text=appSettings.CpuThreads.ToString();PromptThreadsEntry.Text=appSettings.PromptThreads.ToString();GpuEntry.Text=appSettings.GpuLayers.ToString();ContextEntry.Text=appSettings.ContextSize.ToString();
   OutputTokensEntry.Text=appSettings.MaxOutputTokens.ToString();TimeoutEntry.Text=appSettings.RequestTimeoutSeconds.ToString();RequestsEntry.Text=appSettings.MaxRequestsPerRun.ToString();
   AllowDownloadsEntry.IsChecked=appSettings.AllowDownloads;AutoDownloadEntry.IsChecked=appSettings.AutoDownloadMissing;ExperimentalEntry.IsChecked=appSettings.AllowExperimental;
   DownloadProfileChoice.ItemsSource=ModelDownloads.Profiles;DownloadProfileChoice.SelectedItem=ModelDownloads.Profiles.FirstOrDefault(p=>p.Id==appSettings.DownloadProfile)??ModelDownloads.Profiles[0];
+  DefaultDestinationTemplate.Text=appSettings.DestinationTemplate;
   FfmpegEntry.Text=appSettings.Ffmpeg;FfprobeEntry.Text=appSettings.Ffprobe;
   ProviderChoice.SelectedIndex=appSettings.Provider switch{"managed"=>1,"openai"=>2,"compatible"=>0,_=>0};
   UpdateProviderPanels();RefreshKeyStatus();UpdateConnectionSummary();LoadNamingControls();RefreshLocalModels();RefreshManagedRuntime();RefreshThinkingHint();
@@ -127,7 +129,8 @@ public partial class MainWindow
  private AppSettings ReadSettingsControls() {
   int Number(TextBox box,string label)=>int.TryParse(box.Text,out var n)?n:throw new ArgumentException(label+" must be a whole number.");
   return new() {
-   Naming=DefaultNaming(),MetadataProvider=SelectedMetadataProvider,
+   Naming=DefaultNaming(),DestinationTemplate=DefaultDestinationTemplate.Text.Trim(),MetadataProvider=SelectedMetadataProvider,
+   Speech=ReadSpeechSettings(),
    Provider=SelectedProvider,LocalModel=SelectedProvider=="local"?CompatibleModelEntry.Text.Trim():ModelId.Text.Trim(),LocalEndpoint=SelectedProvider=="local"?CompatibleEndpointEntry.Text.Trim():Endpoint.Text.Trim(),OpenAiModel=OpenAiModelEntry.Text.Trim(),
    CompatibleModel=CompatibleModelEntry.Text.Trim(),CompatibleEndpoint=CompatibleEndpointEntry.Text.Trim(),AllowCloudDialogue=CloudConsent.IsChecked==true,UseSubtitleMatching=SubtitleMatchingEntry.IsChecked==true,
    ModelDirectory=ModelFolderEntry.Text.Trim(),ModelFile=ModelFileEntry.Text.Trim(),
@@ -144,7 +147,7 @@ public partial class MainWindow
   if(!string.IsNullOrWhiteSpace(OpenAiKeyEntry.Password))settingsStore.SetKey("openai|https://api.openai.com/v1/responses",OpenAiKeyEntry.Password.Trim());
   if(!string.IsNullOrWhiteSpace(CompatibleKeyEntry.Password))settingsStore.SetKey("compatible|"+settings.CompatibleEndpoint.TrimEnd('/'),CompatibleKeyEntry.Password.Trim());
   SaveMetadataKeys();SaveSubtitleKey();settingsStore.Save(settings);
-  appSettings=settings;if(report!=null)RestorePreview();OpenAiKeyEntry.Clear();CompatibleKeyEntry.Clear();RefreshKeyStatus();UpdateConnectionSummary();
+  appSettings=settings;RefreshRunOptions();if(report!=null)RestorePreview();OpenAiKeyEntry.Clear();CompatibleKeyEntry.Clear();RefreshKeyStatus();UpdateConnectionSummary();
   SettingsStatus.Text="Settings saved. Keys are protected for this Windows account.";return settings;
  }
  private void SaveSettings(object sender,RoutedEventArgs e){if(operation==null)try{SaveSettingsCore();}catch(Exception ex){Error(ex);}}

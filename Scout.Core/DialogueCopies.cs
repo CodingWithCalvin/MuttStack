@@ -10,6 +10,7 @@ internal static class DialogueCopies
         if(group.Status!="suggested"||group.HumanDecision!=null||group.Episodes.Count!=1)return null;
         var keys=new List<string>();
         foreach(var row in group.Rows) {
+            if(row["transcription"]!=null)return null; // Generated text alone cannot establish identical recordings.
             if(!row.Bool("full_dialogue")||row["reasoning"].Text("coverage")!="complete"||
                 (row["reasoning"].Text("method")!=DialogueMatcher.Version&&!Subtitles.SubtitleResult.Valid(row))||row["reasoning"].Text("dialogue_hash")!=MultipartEvidence.DialogueHash(row))return null;
             var cues=MultipartEvidence.Cues(row);double duration=row["duration"]?.GetValue<double>()??0;

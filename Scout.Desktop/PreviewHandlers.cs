@@ -45,7 +45,7 @@ public partial class MainWindow {
    try {
     LoadReport(savedReport);
     var catalog=string.IsNullOrWhiteSpace(catalogPath)?[]:Data.Catalog(catalogPath);
-    var refreshed=await Task.Run(()=>PreviewPlanner.Create(report!.DeepClone().AsObject(),plan.LibraryRoot,plan.Series,catalog,checkSources:false,naming:appSettings.Naming,identity:workspace.SeriesIdentity));
+    var refreshed=await Task.Run(()=>PreviewPlanner.Create(report!.DeepClone().AsObject(),plan.LibraryRoot,plan.Series,catalog,checkSources:false,naming:appSettings.Naming,identity:workspace.SeriesIdentity,destinationRoot:plan.DestinationRoot,contentOptions:plan.ContentOptions));
     var folder=Path.Combine(outputPath,"move-preview");
     previewHtml=PreviewPlanner.Write(refreshed,folder);PreviewCache.Save(folder,CurrentPreviewSignature(),refreshed);DisplayPreview(refreshed);
     workspace.SelectedFiles=RecordingRelocation.MapSelection(report!,workspace.SelectedFiles);
@@ -55,11 +55,11 @@ public partial class MainWindow {
    operation?.Dispose();operation=null;SetBusy(false);RefreshHistory();
   }
  }
- private string CurrentPreviewSignature()=>PreviewCache.Signature(report!,LibraryPath.Text,SeriesName.Text,string.IsNullOrWhiteSpace(catalogPath)?[]:Data.Catalog(catalogPath),appSettings.Naming,workspace?.SeriesIdentity);
+ private string CurrentPreviewSignature()=>PreviewCache.Signature(report!,LibraryPath.Text,SeriesName.Text,string.IsNullOrWhiteSpace(catalogPath)?[]:Data.Catalog(catalogPath),appSettings.Naming,workspace?.SeriesIdentity,SelectedDestinationRoot(),workspace?.ContentOptions);
  private void DisplayPreview(MovePlan plan) {
   var selected=displayedPreviewReport==reportPath?((PreviewGrid.ItemsSource as IEnumerable<PreviewRow>)??[]).Where(r=>r.Selected).Select(r=>r.Item.Source).ToHashSet(StringComparer.OrdinalIgnoreCase):[];
   currentMovePlan=plan;displayedPreviewReport=reportPath;
-  var rows=plan.Items.Select(i=>new PreviewRow(i,Path.GetRelativePath(plan.LibraryRoot,i.Source),i.Destination is null?"Leave in place":Path.GetRelativePath(plan.LibraryRoot,i.Destination),RefreshMoveSelection)).ToList();
+  var rows=plan.Items.Select(i=>new PreviewRow(i,Path.GetRelativePath(plan.LibraryRoot,i.Source),i.Destination is null?"Leave in place":i.Destination,RefreshMoveSelection)).ToList();
   foreach(var row in rows)row.Selected=selected.Contains(row.Item.Source);
   PreviewGrid.ItemsSource=rows;RefreshMoveSelection();
   PreviewSummary.Text=string.Join("   /   ",plan.Items.GroupBy(i=>i.Action=="completed"?"Completed":i.Action=="rename/move"?"Pending":i.Action=="hold"?"Held":"Unchanged").Select(g=>$"{g.Count()} {g.Key}"))+"   ·   Only checked files are moved";

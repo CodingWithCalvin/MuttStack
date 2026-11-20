@@ -10,12 +10,12 @@ public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cache
   if(scope!=current) {
    var loaded=await source.LoadAsync(series,catalog,progress,ct);
    if(loaded.Series.Key!=series.Key)throw new InvalidDataException("Subtitle references belong to another provider series.");
-   var refs=loaded.References.Select(r=>new MappedReference(new(r.Id,series.Name,r.Name,r.Url,TranscriptComparison.Index(r.Cues.Select(c=>c.Text))),r.Archive,r.Season,TitleMapping.Label(r.Name),TitleMapping.Find(r.Name,catalog,r.Id))).ToArray();
+   var refs=loaded.References.Select(r=>new MappedReference(new(r.Id,series.Name,r.Name,r.Url,TranscriptComparison.Index(r.Cues)),r.Archive,r.Season,TitleMapping.Label(r.Name),TitleMapping.Find(r.Name,catalog,r.Id))).ToArray();
    common=TranscriptComparison.Common(refs.Select(r=>r.Reference.Index).ToArray());
    candidates=ReferenceMatcher.Candidates(refs,common,ct);ct.ThrowIfCancellationRequested();
    referenceHash=CollectionResolver.Hash(JsonSerializer.Serialize(loaded.References.OrderBy(r=>r.Id),Data.Options));note=loaded.Note;scope=current;
   }
-  var cacheKey=CollectionResolver.Hash(JsonSerializer.Serialize(new{SubtitleResult.Version,current,referenceHash,cues},Data.Options));
+  var cacheKey=CollectionResolver.Hash(JsonSerializer.Serialize(new{SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,current,referenceHash,cues},Data.Options));
   var path=Path.Combine(cacheRoot,"decisions",cacheKey+".json");
   if(ScoutStorage.Exists(path))try {
    var saved=Data.Read(path);var savedResult=saved["result"] as JsonObject;
@@ -23,12 +23,12 @@ public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cache
    if(savedResult==null||SubtitleResult.Valid(SubtitleResult.Row(cues,catalog,attempt),catalog,series)) {progress.Report("Reusing exact-input subtitle comparison.");return attempt;}
   }catch(Exception ex) when(ex is IOException or InvalidDataException or JsonException or InvalidOperationException or ArgumentException){/* Recalculate invalid/stale cached decisions. */}
   progress.Report("Comparing saved dialogue with subtitle references…");
-  var index=TranscriptComparison.Index(cues.Select(c=>c.Text));var decision=ReferenceMatcher.Match(index,candidates,common,ct);ct.ThrowIfCancellationRequested();
+  var index=TranscriptComparison.Index(cues);var decision=ReferenceMatcher.Match(index,candidates,common,ct);ct.ThrowIfCancellationRequested();
   var best=decision.Best;
   var episodes=decision.ProviderMapped?best!.Candidate.Link!.Episodes:[];
   // The app currently represents at most two consecutive catalog episodes.
   bool supported=decision.ProviderMapped&&episodes.Length is 1 or 2&&(episodes.Length==1||episodes[0].Season==episodes[1].Season&&episodes[0].Number+1==episodes[1].Number);
-  var details=JsonSerializer.SerializeToNode(new{version=SubtitleResult.Version,accepted=supported,provider=series.Provider,seriesId=series.Id,
+  var details=JsonSerializer.SerializeToNode(new{version=SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,accepted=supported,provider=series.Provider,seriesId=series.Id,
    catalogHash=SubtitleResult.CatalogHash(catalog),dialogueHash=SubtitleResult.DialogueHash(cues),referenceHash,referenceFiles=candidates.Count(c=>c.Parts.Length==1),
    reason=decision.Reason,note,decision.Margin,selectedEpisodes=episodes,
    best=best==null?null:new{best.Candidate.Id,best.Candidate.Name,best.Candidate.Link,best.Overlap,best.OrderedParts,best.CompleteExtent,best.Parts,
@@ -48,6 +48,12 @@ public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cache
 }
 
 public static class SubtitleResult {
+ public static string FallbackSummary(JsonObject details) {
+  var reason=details.Text("reason","No supported subtitle assignment.");
+  if(details["best"] is not JsonObject best||best["overlap"] is not JsonObject overlap)return reason;
+  return reason+$" Best reference: {best.Text("name")} · source sequences {overlap["source_coverage"]!.GetValue<double>():P0}, reference sequences {overlap["reference_coverage"]!.GetValue<double>():P0}"+
+   (best["link"]==null?" · no verified provider-title mapping.":".");
+ }
  public const string Version="subtitle-provider-v1";
  public static string CatalogHash(IReadOnlyList<Episode> catalog)=>CollectionResolver.Hash(JsonSerializer.Serialize(catalog.OrderBy(e=>e.Id),Data.Options));
  public static string DialogueHash(IReadOnlyList<Cue> cues)=>CollectionResolver.Hash(JsonSerializer.Serialize(cues,Data.Options));

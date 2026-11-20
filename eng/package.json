@@ -1,0 +1,18 @@
+{
+  "project": "Scout.Desktop/Scout.Desktop.csproj",
+  "solution": "Scout.slnx",
+  "logo": "Scout.Desktop/Assets/Scout.png",
+  "version": "0.9.12.0",
+  "tests": [
+    "Scout.Tests/Scout.Tests.csproj",
+    "Scout.Desktop.Tests/Scout.Desktop.Tests.csproj"
+  ],
+  "fake": null,
+  "handbrake": false,
+  "name": "Scout",
+  "tools": [
+    "tools/Scout.DatabaseCutover/Scout.DatabaseCutover.csproj",
+    "tools/Scout.DatabaseRehearsal/Scout.DatabaseRehearsal.csproj",
+    "tools/Scout.HandoffRehearsal/Scout.HandoffRehearsal.csproj"
+  ]
+}

@@ -49,11 +49,13 @@ public sealed class RecordingGroup
     public List<string> CompetingRecordings {get;set;}=[];
     public JsonObject? HumanDecision {get;set;}
     public bool DialogueCopies {get;set;}
+    public CompilationProof? Compilation {get;set;}
     public bool Feature => Status=="unassigned" && Rows.All(r=>r["reasoning"].Text("assessment")=="non_episode");
+    public bool NotProcessed => Status=="not_processed";
     public bool Duplicate => Rows.Count>1;
     public string Code=>Combined?$"{Episodes[0].Code}-E{Episodes[1].Number:00}":Episode?.Code ?? "—";
-    public string Title=>Combined?string.Join(" / ",Episodes.Select(e=>e.Title)):Split?$"{Episode!.Title} (Part {Part} of {PartCount})":Episode?.Title ?? (Feature?"Non-episode feature":"Unresolved");
-    public string Category=>Combined?"Combined episodes":Split?"Split episode":Episode is not null?"Episode":Feature?"Feature":"Unresolved";
+    public string Title=>NotProcessed?"No readable dialogue":Compilation!=null?"Play-all compilation":Combined?string.Join(" / ",Episodes.Select(e=>e.Title)):Split?$"{Episode!.Title} (Part {Part} of {PartCount})":Episode?.Title ?? (Feature?"Non-episode feature":"Unresolved");
+    public string Category=>NotProcessed?"Not processed":Compilation!=null?"Compilation":Combined?"Combined episodes":Split?"Split episode":Episode is not null?"Episode":Feature?"Feature":"Unresolved";
     public string DisplayStatus=>Status switch {"source_unavailable"=>"Source unavailable","overridden_conflict"=>"Held by override","stale_human_override"=>"Override expired",_ when HumanDecision!=null&&Episode!=null=>"Human override",_=>Category};
     public int Copies=>Rows.Count;
     public string Detail {get {var review=EvidenceReview.Create(this);return review.Assessment+"\n"+review.Suggestion+"\n\n"+string.Join("\n\n",review.Sections.Select(s=>s.Heading+"\n"+s.Text));}}
