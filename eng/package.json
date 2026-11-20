@@ -13,5 +13,7 @@
   "name": "Ripley",
   "tools": [
     "tools/Ripley.Reconcile/Ripley.Reconcile.csproj"
-  ]
+  ],
+  "appId": "CodingWithCalvin.Ripley",
+  "icon": "src/Ripley/Assets/Ripley.ico"
 }

@@ -1,10 +1,10 @@
 #requires -Version 7.0
-param([string]$DotnetPath='dotnet')
+param([string]$DotnetPath='dotnet',[string]$AppDirectory)
 . (Join-Path $PSScriptRoot 'common.ps1')
 $result=Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'artifacts/packaging') -Filter result.json -Recurse | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
 if(!$result){throw 'Package the application before testing its published payload.'}
 $package=Get-Content -LiteralPath $result.FullName -Raw | ConvertFrom-Json
-$app=$package.publishedApp
+$app=if($AppDirectory){[IO.Path]::GetFullPath($AppDirectory)}else{$package.publishedApp}
 if(!(Test-Path -LiteralPath $app)){throw 'Published payload is missing.'}
 Push-Location $RepoRoot
 try {
