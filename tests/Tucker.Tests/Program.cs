@@ -30,7 +30,7 @@ try {
  ripProgress.ObserveFiles(new[]{("C1_t00.mkv",2048L), ("C2_t01.mkv",3072L)},name=>"2_2_"+name);
  Check(ripProgress.Current!.OriginalName=="C2_t01.mkv"&&ripProgress.Current.Progress==50&&ripProgress.Summary.Contains("1 written"),"Subsequent raw files get their own queue row and current progress");
  ripProgress.Read("PRGV:bad,NaN,0");Check(Math.Abs(ripProgress.Overall-55)<0.001,"Malformed progress does not replace valid progress values");
- ripProgress.Stop(true);Check(ripProgress.Files.Take(2).All(f=>f.Status=="Kept · unverified")&&ripProgress.Files[2].Status=="Not started"&&ripProgress.Files.All(f=>f.Status!="Saved"),"Cancelled ripping distinguishes retained partial files from files never started");
+ ripProgress.Stop(true);Check(ripProgress.Files.Take(2).All(f=>f.Status=="Kept Â· unverified")&&ripProgress.Files[2].Status=="Not started"&&ripProgress.Files.All(f=>f.Status!="Saved"),"Cancelled ripping distinguishes retained partial files from files never started");
  ripProgress.Reset(1);ripProgress.Complete(new[]{new Job{Source=Path.Combine(temp,"final (2).mkv"),OriginalFilename="title_t00.mkv",SourceSize=99}});
  Check(ripProgress.Files.Single().Name=="final (2).mkv"&&ripProgress.Files.Single().Status=="Saved"&&ripProgress.Overall==100,"Only successful final publication marks a rip saved with its actual collision-safe filename");
  Check(Disc.RipArguments("dev:E:",120,a).Contains("--minlength=120"),"MakeMKV command receives minimum length");
@@ -146,9 +146,16 @@ try {
   var flowName=await Engine.Encode(flowJob,flowOptions,_=>{},CancellationToken.None);
   Check(flowName=="2_5_title_t00.mp4"&&File.ReadAllText(flowJob.Source)=="test raw content"&&File.ReadAllText(Path.Combine(flowOptions.Output,flowName))=="test encoded content","Rip-to-compression workflow preserves raw data and requested filenames");
   Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","partial");var partial=Disc.NewFolder(temp,"PARTIAL");rejected=false;try{await Disc.Rip(fake,"disc:0",120,partial,_=>{},CancellationToken.None);}catch(IOException){rejected=true;}Check(rejected&&File.Exists(Path.Combine(partial,"title_t00.mkv")),"Partial rip retained but rejected for compression");
-  Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","wait");var waiting=Disc.NewFolder(temp,"WAITING");using var stop=new CancellationTokenSource();var ripping=Disc.Rip(fake,"disc:0",120,waiting,_=>{},stop.Token);
-  var encode=Engine.Scan([b],output,true,".mkv").Single();var encoded=await Engine.Encode(encode,new Options(fake,"test","",false,output,".mkv"),_=>{},CancellationToken.None);Check(!ripping.IsCompleted&&File.Exists(Path.Combine(output,encoded)),"Compression completes while another rip is active");
-  stop.Cancel();rejected=false;try{await ripping;}catch(OperationCanceledException){rejected=true;}Check(rejected&&File.Exists(Path.Combine(waiting,"title_t00.mkv")),"Cancelling rip preserves raw files");Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);
+  Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE","wait");var waiting=Disc.NewFolder(temp,"WAITING");using var stop=new CancellationTokenSource();
+  var ripStarted=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+  var ripping=Disc.Rip(fake,"disc:0",120,waiting,line=>{if(line.StartsWith("PRGV:"))ripStarted.TrySetResult();},stop.Token);
+  try {
+   // The fake emits progress only after creating its raw file. Process startup order varies on CI.
+   await ripStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+   var encode=Engine.Scan([b],output,true,".mkv").Single();var encoded=await Engine.Encode(encode,new Options(fake,"test","",false,output,".mkv"),_=>{},CancellationToken.None);Check(!ripping.IsCompleted&&File.Exists(Path.Combine(output,encoded)),"Compression completes while another rip is active");
+   stop.Cancel();rejected=false;try{await ripping;}catch(OperationCanceledException){rejected=true;}Check(rejected&&File.Exists(Path.Combine(waiting,"title_t00.mkv")),"Cancelling rip preserves raw files");
+  } finally {stop.Cancel();try{await ripping;}catch(OperationCanceledException){}Environment.SetEnvironmentVariable("RIPLEY_TEST_MODE",null);}
+
  }
  if(args.Length>0) passed += await QueueTests.Run(temp,Path.GetFullPath(args[0]));
  Console.WriteLine($"{passed} checks passed");
