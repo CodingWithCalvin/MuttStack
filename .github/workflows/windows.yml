@@ -1,4 +1,4 @@
-name: Windows build and MSIX
+name: Windows build and installer
 
 on:
   pull_request:
@@ -22,7 +22,6 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
       MSBUILDUSESERVER: '0'
-      MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=Coding With Calvin' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,14 +46,14 @@ jobs:
             $parts = $version.Split('.'); $parts[3] = $env:GITHUB_RUN_NUMBER; $version = $parts -join '.'
           }
           "value=$version" >> $env:GITHUB_OUTPUT
-      - name: Build self-contained MSIX and portable ZIP
+      - name: Build self-contained installer and portable ZIP
         shell: pwsh
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.value }}
-        run: ./eng/package.ps1 -Version $env:PACKAGE_VERSION -Publisher $env:MSIX_PUBLISHER -OutputDirectory "$PWD/artifacts/distribution"
-      - name: Test the packaged application
+        run: ./eng/package.ps1 -Version $env:PACKAGE_VERSION -OutputDirectory "$PWD/artifacts/distribution"
+      - name: Test installation, upgrades and the installed app
         shell: pwsh
-        run: ./eng/test-published.ps1
+        run: ./eng/test-installer.ps1 -Production
       - name: Upload packages and checksums
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -89,20 +88,16 @@ jobs:
         with:
           name: Tucker-windows
           path: artifacts/distribution
-      - name: Sign the validated MSIX
-        shell: pwsh
-        env:
-          MSIX_CERTIFICATE_BASE64: ${{ secrets.MSIX_CERTIFICATE_BASE64 }}
-          MSIX_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_CERTIFICATE_PASSWORD }}
-        run: |
-          $package = Get-ChildItem artifacts/distribution/*-unsigned.msix
-          if (@($package).Count -ne 1) { throw 'Expected exactly one unsigned MSIX.' }
-          ./eng/sign-package.ps1 -Package $package.FullName
       - name: Create a draft release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          foreach ($line in Get-Content artifacts/distribution/SHA256SUMS.txt) {
+            if ($line -notmatch '^([a-f0-9]{64})  ([A-Za-z0-9._-]+)$') { throw 'Invalid package checksum entry.' }
+            $expected = $Matches[1]; $file = Join-Path artifacts/distribution $Matches[2]
+            if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Release package checksum mismatch.' }
+          }
           $assets = Get-ChildItem artifacts/distribution -File | Select-Object -ExpandProperty FullName
-          gh release create $env:GITHUB_REF_NAME @assets --verify-tag --draft --generate-notes --title "Tucker $env:GITHUB_REF_NAME"
+          gh release create $env:GITHUB_REF_NAME @assets --verify-tag --draft --generate-notes --notes "Unsigned Windows installer and portable ZIP. See docs/releases.md for installation details." --title "Tucker $env:GITHUB_REF_NAME"
           if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed.' }

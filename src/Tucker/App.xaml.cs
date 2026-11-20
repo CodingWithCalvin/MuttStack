@@ -2,12 +2,16 @@ using System.IO;
 using System.Windows;
 using System.Security.Cryptography;
 using System.Text;
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Tucker.Desktop.Tests")]
 namespace Tucker;
 public partial class App : Application
 {
+    // The desktop regression harness supplies its own temporary storage and windows.
+    internal bool IsolatedStartup { get; init; }
     Mutex? instance;
     Doggo.StorageLease? storageLease;
     protected override void OnStartup(StartupEventArgs e) {
+        if(IsolatedStartup)return;
         base.OnStartup(e);
         try {
             var test=Array.IndexOf(e.Args,"--state");

@@ -10,5 +10,7 @@
   "fake": "tests/FakeCli/FakeCli.csproj",
   "handbrake": true,
   "name": "Tucker",
-  "tools": []
+  "tools": [],
+  "appId": "CodingWithCalvin.Tucker",
+  "icon": "src/Tucker/Assets/Tucker.ico"
 }

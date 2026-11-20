@@ -10,7 +10,9 @@ using Tucker;
 class Program
 {
  [STAThread] static void Main(string[] args) {
-  var app=new Tucker.App{ShutdownMode=ShutdownMode.OnExplicitShutdown};app.InitializeComponent();
+  var app=new Tucker.App{IsolatedStartup=true,ShutdownMode=ShutdownMode.OnExplicitShutdown};app.InitializeComponent();
+  app.Dispatcher.Invoke(()=>{},DispatcherPriority.ApplicationIdle);
+  if(app.MainWindow!=null)throw new Exception("Desktop tests must suppress production startup.");
   app.Dispatcher.InvokeAsync(async()=>{
    var root=Path.GetFullPath(args[1]);Directory.CreateDirectory(root);var dbPath=Path.Combine(root,"doggo.db");int passed=0;
    void Check(bool yes,string label){if(!yes)throw new Exception(label);Console.WriteLine("PASS "+label);passed++;}

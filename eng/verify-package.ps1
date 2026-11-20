@@ -1,16 +1,24 @@
 #requires -Version 7.0
-param([Parameter(Mandatory)][string]$Package)
+param([Parameter(Mandatory)][string]$PublishedApp,[Parameter(Mandatory)][string]$Installer,[Parameter(Mandatory)][string]$PortableZip)
 . (Join-Path $PSScriptRoot 'common.ps1')
-$directory=Join-Path $RepoRoot ('artifacts\validation\msix-'+[guid]::NewGuid().ToString('N'))
-& (Get-WindowsSdkTool 'makeappx.exe') unpack /p ([IO.Path]::GetFullPath($Package)) /d $directory /o
-if($LASTEXITCODE -ne 0){throw 'MSIX extraction/validation failed.'}
-[xml]$manifest=Get-Content -LiteralPath (Join-Path $directory 'AppxManifest.xml') -Raw
-$ns=[Xml.XmlNamespaceManager]::new($manifest.NameTable);$ns.AddNamespace('a','http://schemas.microsoft.com/appx/manifest/foundation/windows10');$ns.AddNamespace('d','http://schemas.microsoft.com/appx/manifest/desktop/windows10/6');$ns.AddNamespace('r','http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities')
-if($manifest.SelectSingleNode('/a:Package/a:Properties/d:FileSystemWriteVirtualization',$ns).InnerText -ne 'disabled'){throw 'MSIX would isolate the shared database under package-local AppData.'}
-foreach($capability in @('runFullTrust','unvirtualizedResources')){if(!$manifest.SelectSingleNode("/a:Package/a:Capabilities/r:Capability[@Name='$capability']",$ns)){throw "Missing $capability capability."}}
 $name=$PackageConfig.name
-foreach($file in @("$name.exe","$name.dll",'hostfxr.dll','hostpolicy.dll','LICENSE.txt','build-info.json')){if(!(Test-Path -LiteralPath (Join-Path $directory $file))){throw "Missing self-contained payload file: $file"}}
-$private=Get-ChildItem -LiteralPath $directory -File -Recurse | Where-Object { $_.Name -match '^(doggo|scout)\.db(-wal|-shm)?$|^credentials|^storage\.json$' -or $_.Extension -in @('.pfx','.key','.gguf','.mkv','.mp4') }
-if($private){throw 'Package unexpectedly contains private state, signing keys, models or media.'}
-if($PackageConfig.handbrake -and !(Test-Path -LiteralPath (Join-Path $directory 'handbrake\source\HandBrake-1.11.2-source.tar.bz2'))){throw 'HandBrake source archive is missing.'}
-Write-Output "Verified $name MSIX identity, runtime payload, shared-database access configuration, and exclusion of private data. No app was installed or launched."
+foreach($file in @("$name.exe","$name.dll",'hostfxr.dll','hostpolicy.dll','LICENSE.txt','build-info.json')){if(!(Test-Path -LiteralPath (Join-Path $PublishedApp $file))){throw "Missing self-contained payload file: $file"}}
+$payload=@(Get-ChildItem -LiteralPath $PublishedApp -File -Recurse)
+$private=@($payload | Where-Object { $_.Name -match '\.db(-wal|-shm)?$|^credentials|^storage\.json$' -or $_.Extension -in @('.pfx','.p12','.key','.gguf','.mkv','.mp4') })
+if($private.Count){throw 'Package unexpectedly contains private state, signing keys, models or media.'}
+if($PackageConfig.handbrake -and !(Test-Path -LiteralPath (Join-Path $PublishedApp 'handbrake/source/HandBrake-1.11.2-source.tar.bz2'))){throw 'HandBrake source archive is missing.'}
+if(!(Test-Path -LiteralPath $Installer) -or (Get-Item -LiteralPath $Installer).VersionInfo.FileDescription.Trim() -ne "$name Setup"){throw 'Installer identity is incorrect.'}
+if((Get-AuthenticodeSignature -LiteralPath $Installer).Status -ne 'NotSigned'){throw 'This workflow expects an unsigned installer; review signing before changing the release contract.'}
+$zip=[IO.Compression.ZipFile]::OpenRead($PortableZip)
+try {
+    $entries=@($zip.Entries | Where-Object { $_.Name })
+    if($entries.Count -ne $payload.Count){throw 'Portable ZIP and installer payload have different file counts.'}
+    foreach($file in $payload) {
+        $relative=[IO.Path]::GetRelativePath($PublishedApp,$file.FullName).Replace('\','/')
+        $entry=$zip.GetEntry($relative);if(!$entry){throw "Portable ZIP is missing $relative"}
+        $stream=$entry.Open()
+        try{$hash=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($stream))}finally{$stream.Dispose()}
+        if($hash -ne (Get-FileHash -LiteralPath $file.FullName).Hash){throw "Portable ZIP payload mismatch: $relative"}
+    }
+}finally{$zip.Dispose()}
+Write-Output "Verified $name installer identity and unsigned status, self-contained payload, portable ZIP parity, and exclusion of private state."
