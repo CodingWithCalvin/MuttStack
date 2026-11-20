@@ -9,7 +9,7 @@ public static class RunNames
     public static string Suggest(IEnumerable<Job> preview,IEnumerable<string> folders,IEnumerable<Handoff> batches)
     {
         var jobs=preview.ToList();var roots=folders.ToList();var files=batches.SelectMany(b=>b.Manifest.Files).ToList();
-        var ready=jobs.Where(j=>j.Status!="Already imported").ToList();if(ready.Count>0)jobs=ready;
+        var ready=jobs.Where(j=>j.Status is not ("Already imported" or "Already queued")).ToList();if(ready.Count>0)jobs=ready;
         var entries=jobs.Count>0
             ?jobs.Select(j=>(Series:Clean(j.Series?.Name),Season:Clean(j.Season),Label:Clean(j.DiscLabel).Length>0?Clean(j.DiscLabel):FolderLabel(Path.GetDirectoryName(j.Source)??j.Source))).ToList()
             :files.Select(f=>(Series:Clean(f.Series?.Name),Season:Clean(f.Season),Label:Clean(f.DiscLabel).Length>0?Clean(f.DiscLabel):FolderLabel(Path.GetDirectoryName(f.Source)??f.Source))).ToList();

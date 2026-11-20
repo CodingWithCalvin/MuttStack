@@ -41,9 +41,14 @@ public sealed class DoggoDatabase
         foreach(var row in db.Query("SELECT id,digest,saved_utc,files FROM tucker_receipts"))state.Receipts.Add(new(row[0],row[1],DateTime.Parse(row[2],null,System.Globalization.DateTimeStyles.RoundtripKind),int.Parse(row[3])));
         return state;
     }
-    public void Save(QueueState state) {
+    public void Save(QueueState state,IReadOnlyList<Handoff>? reaccepted=null) {
         using var db=Open();db.Exec("BEGIN IMMEDIATE");
         try {
+            foreach(var h in reaccepted??[]) {
+                var accepted=db.Query("SELECT b.digest,b.status,r.digest FROM handoff_batches b JOIN tucker_receipts r ON r.id=b.id WHERE b.id=?",h.Manifest.Id);
+                if(accepted.Count!=1||accepted[0][0]!=h.Digest||accepted[0][1]!="Accepted"||accepted[0][2]!=h.Digest)
+                    throw new IOException("An accepted batch changed or is no longer available. Refresh the inbox before re-accepting it.");
+            }
             db.Exec("DELETE FROM tucker_jobs");
             for(int i=0;i<state.Jobs.Count;i++){var j=state.Jobs[i];db.Exec("INSERT INTO tucker_jobs VALUES(?,?,?,?)",j.Id,i.ToString(),j.QueueId,JsonSerializer.Serialize(j));}
             db.Exec("DELETE FROM tucker_archived_runs");

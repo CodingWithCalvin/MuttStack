@@ -41,6 +41,15 @@ public sealed class QueueManager
         }
     }
     public static string SourceKey(Job j) => Path.GetFullPath(j.Source).ToUpperInvariant()+"|"+j.SourceSize+"|"+j.SourceModified.Ticks;
+    public static HashSet<string> ReacceptedSourceKeys(IEnumerable<Handoff> batches) => batches.Where(h=>h.Reaccept).SelectMany(h=>h.Manifest.Files).Select(f=>Doggo.DoggoInbox.SourceKey(f.Source,f.SourceSize,f.SourceModified)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    public string ImportStatus(Job job,IReadOnlySet<string> reaccepted) => ImportStatus(job,reaccepted,State);
+    string ImportStatus(Job job,IReadOnlySet<string> reaccepted,QueueState state)
+    {
+        var key=SourceKey(job);
+        if(state.Jobs.Any(j=>SourceKey(j)==key&&j.Status!="Completed"))return "Already queued";
+        if(reaccepted.Contains(key)||job.Reprocess)return "Ready to reprocess";
+        return state.ImportedSources.Contains(key)||Database.CompletedInRipley(key)?"Already imported":"Ready";
+    }
     public void Save() => Database.Save(State);
     public int Add(IEnumerable<Job> preview, bool joinRunning, Handoff? handoff = null)
         => AddCore(preview,joinRunning,handoff==null?[]:[handoff]);
@@ -62,28 +71,34 @@ public sealed class QueueManager
     {
         if (joinRunning && !CanJoinRunning) throw new IOException("Active processing has finished, is pausing, or is stopping. Save these files as waiting instead.");
         var candidates=preview.ToList();
-        if(handoffs.GroupBy(h=>h.Manifest.Id).Any(g=>g.Select(h=>h.Digest).Distinct().Count()>1))throw new IOException("A handoff has conflicting contents. Refresh the inbox.");
+        if(handoffs.GroupBy(h=>h.Manifest.Id).Any(g=>g.Select(h=>(h.Digest,h.Reaccept)).Distinct().Count()>1))throw new IOException("A handoff has conflicting selections. Refresh the inbox.");
         var batches=handoffs.DistinctBy(h=>h.Manifest.Id).ToArray();
         foreach(var handoff in batches) {
-            if(State.Receipts.FirstOrDefault(r=>r.Id==handoff.Manifest.Id) is {} previous) {
+            var previous=State.Receipts.FirstOrDefault(r=>r.Id==handoff.Manifest.Id);
+            if(handoff.Reaccept&&previous==null)throw new IOException("Only an accepted inbox batch can be re-accepted. Refresh the inbox.");
+            if(previous!=null) {
                 if(previous.Digest!=handoff.Digest)throw new IOException("This handoff ID already exists with different contents.");
-                if(runId==null&&batches.Length==1)return 0;
-                throw new IOException("A selected inbox batch was already accepted. Remove it and preview again.");
+                if(!handoff.Reaccept) {
+                    if(runId==null&&batches.Length==1)return 0;
+                    throw new IOException("A selected inbox batch was already accepted. Use Re-accept selected in Inbox to process it again.");
+                }
             }
             if(handoff.Manifest.Files.Any(f=>!candidates.Any(j=>j.Include&&SourceKey(j)==Doggo.DoggoInbox.SourceKey(f.Source,f.SourceSize,f.SourceModified))))
                 throw new IOException("Accept every file in each selected inbox batch together. Preview the complete run again.");
         }
         var next = JsonSerializer.Deserialize<QueueState>(JsonSerializer.Serialize(State))!;
         next.ImportedSources = new(next.ImportedSources, StringComparer.OrdinalIgnoreCase);
+        var reaccepted=ReacceptedSourceKeys(batches);
         var added = new List<Job>();
         foreach (var original in candidates.Where(j => j.Include)) {
             var key = SourceKey(original);
-            if(runId!=null) {
+            if(runId!=null||reaccepted.Contains(key)||original.Reprocess) {
                 var source=new FileInfo(original.Source);
                 if(!source.Exists||source.Length!=original.SourceSize||source.LastWriteTimeUtc!=original.SourceModified)throw new IOException("A source changed after preview. Preview the run again: "+original.Source);
             }
-            if (next.ImportedSources.Contains(key) || Database.CompletedInRipley(key)) continue;
+            if (ImportStatus(original,reaccepted,next) is "Already imported" or "Already queued") continue;
             var j = JsonSerializer.Deserialize<Job>(JsonSerializer.Serialize(original))!;
+            if(reaccepted.Contains(key)||original.Reprocess){j.Id=Guid.NewGuid().ToString("N");j.Error="";}
             if (j.Encoding == null) throw new IOException("Missing frozen encoding settings.");
             var reserved = next.Jobs.Where(x => string.Equals(x.Encoding?.Output, j.Encoding.Output, StringComparison.OrdinalIgnoreCase)).Select(x => x.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             j.Name = Engine.Unique(j.Encoding.Output, j.Name, reserved);
@@ -92,8 +107,8 @@ public sealed class QueueManager
             next.Jobs.Add(j); next.ImportedSources.Add(key); added.Add(j);
         }
         var addedKeys=added.Select(SourceKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach(var handoff in batches)next.Receipts.Add(new(handoff.Manifest.Id,handoff.Digest,DateTime.UtcNow,handoff.Manifest.Files.Select(f=>Doggo.DoggoInbox.SourceKey(f.Source,f.SourceSize,f.SourceModified)).Distinct(StringComparer.OrdinalIgnoreCase).Count(addedKeys.Contains)));
-        Database.Save(next); // No acknowledgement or in-memory acceptance until the full state is durable.
+        foreach(var handoff in batches.Where(h=>!h.Reaccept))next.Receipts.Add(new(handoff.Manifest.Id,handoff.Digest,DateTime.UtcNow,handoff.Manifest.Files.Select(f=>Doggo.DoggoInbox.SourceKey(f.Source,f.SourceSize,f.SourceModified)).Distinct(StringComparer.OrdinalIgnoreCase).Count(addedKeys.Contains)));
+        Database.Save(next,batches.Where(h=>h.Reaccept).ToArray()); // No acknowledgement or in-memory acceptance until the full state is durable.
         // Preserve references used by the active encode while adopting the durable transaction.
         State.Jobs.AddRange(added); State.ImportedSources = next.ImportedSources; State.Receipts = next.Receipts;
         if (joinRunning) foreach (var j in added) scheduled.Add(j.Id);
@@ -192,6 +207,9 @@ public sealed class HandoffFile
 }
 public sealed record Handoff(HandoffManifest Manifest, string Digest)
 {
+    // Explicit local draft intent; never changes the immutable producer manifest or receipt.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool Reaccept { get; init; }
     public static Handoff Read(string path)
     {
         var bytes = File.ReadAllBytes(path);

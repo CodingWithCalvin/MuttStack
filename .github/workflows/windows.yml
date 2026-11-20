@@ -1,0 +1,108 @@
+name: Windows build and MSIX
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      MSBUILDUSESERVER: '0'
+      MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER || 'CN=Coding With Calvin' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - name: Test this repository independently
+        shell: pwsh
+        run: ./eng/test.ps1
+      - name: Resolve package version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content eng/package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            if ($env:GITHUB_REF_NAME -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?$') { throw 'Use a vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH.REVISION tag.' }
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+            if ($version.Split('.').Count -eq 3) { $version += '.0' }
+          } else {
+            if ([long]$env:GITHUB_RUN_NUMBER -gt 65535) { throw 'Bump the base version before resetting the CI revision sequence.' }
+            $parts = $version.Split('.'); $parts[3] = $env:GITHUB_RUN_NUMBER; $version = $parts -join '.'
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+      - name: Build self-contained MSIX and portable ZIP
+        shell: pwsh
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.value }}
+        run: ./eng/package.ps1 -Version $env:PACKAGE_VERSION -Publisher $env:MSIX_PUBLISHER -OutputDirectory "$PWD/artifacts/distribution"
+      - name: Test the packaged application
+        shell: pwsh
+        run: ./eng/test-published.ps1
+      - name: Upload packages and checksums
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Tucker-windows
+          path: artifacts/distribution/*
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload validation diagnostics
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Tucker-validation
+          path: |
+            artifacts/validation/**/*.png
+            artifacts/validation/**/*.log
+            artifacts/packaging/**/result.json
+          if-no-files-found: ignore
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Tucker-windows
+          path: artifacts/distribution
+      - name: Sign the validated MSIX
+        shell: pwsh
+        env:
+          MSIX_CERTIFICATE_BASE64: ${{ secrets.MSIX_CERTIFICATE_BASE64 }}
+          MSIX_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_CERTIFICATE_PASSWORD }}
+        run: |
+          $package = Get-ChildItem artifacts/distribution/*-unsigned.msix
+          if (@($package).Count -ne 1) { throw 'Expected exactly one unsigned MSIX.' }
+          ./eng/sign-package.ps1 -Package $package.FullName
+      - name: Create a draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = Get-ChildItem artifacts/distribution -File | Select-Object -ExpandProperty FullName
+          gh release create $env:GITHUB_REF_NAME @assets --verify-tag --draft --generate-notes --title "Tucker $env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed.' }

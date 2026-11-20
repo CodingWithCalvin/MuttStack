@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 static class QueueTests
 {
  public static async Task<int> Run(string temp,string fake) {
-  int passed=ScoutOutboxTests.Run(temp)+RunTests.Run(temp,fake)+await AppendTests.Run(temp,fake)+await HistoryTests.Run(temp,fake);void Check(bool yes,string label){if(!yes)throw new Exception(label);Console.WriteLine("PASS "+label);passed++;}
+  int passed=DatabaseCredentialTests.Run(temp)+ScoutOutboxTests.Run(temp)+RunTests.Run(temp,fake)+await AppendTests.Run(temp,fake)+await HistoryTests.Run(temp,fake)+await ReacceptTests.Run(temp,fake);void Check(bool yes,string label){if(!yes)throw new Exception(label);Console.WriteLine("PASS "+label);passed++;}
   var root=Path.Combine(temp,"queues");Directory.CreateDirectory(root);var manager=new QueueManager(root);
   var presetFile=Path.Combine(root,"gui.json");File.WriteAllText(presetFile,"""{"VersionMajor":72,"PresetList":[{"PresetName":"Custom","Type":1,"Folder":false,"FileFormat":"av_mkv","VideoEncoder":"x265_10bit","VideoPreset":"slow","VideoQualitySlider":18}]}""");
   var options=Presets.Snapshot(presetFile,Presets.Load(presetFile).Single(),fake,Path.Combine(root,"out"),Path.Combine(root,"presets"),"nvdec");manager.Database.Freeze(options);

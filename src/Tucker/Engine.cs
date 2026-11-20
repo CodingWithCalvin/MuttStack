@@ -21,6 +21,9 @@ public sealed class Job : INotifyPropertyChanged
     public string DiscMetadata { get; set; } = "";
     public string PresetDisplay { get; set; } = "";
     public bool Include { get; set; } = true;
+    // Explicit permission for this preview only; ordinary future imports must still deduplicate.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool Reprocess { get; set; }
     public long SourceSize { get; set; }
     public DateTime SourceModified { get; set; }
     public string Source { get; set; } = "";

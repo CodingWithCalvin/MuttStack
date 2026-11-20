@@ -1,6 +1,6 @@
 # Tucker to Scout handoffs
 
-This workflow is implemented and tested on isolated databases. It has not been installed over the live apps or enabled against live Scout storage.
+This workflow uses the shared Doggo database. Its tests run against isolated databases; building and packaging do not change a live deployment.
 
 ## User flow
 
@@ -22,9 +22,9 @@ SQLite uses table prefixes as logical schemas. Existing components stay at `dogg
 | `tucker_handoffs` | `tucker_scout_outbox`, `tucker_scout_sent_files` | Durable sending intent and duplicate prevention |
 | `scout_handoffs` | `scout_handoff_receipts`, `scout_handoff_files` | Durable acceptance and output-to-Scout mapping |
 
-The legacy `handoff_batches` and `handoff_events` remain exclusively Ripley → Tucker. Older recipient-unaware apps never see Scout offers in those tables. No peer app's private schema is migrated by the transport.
+The legacy `handoff_batches` and `handoff_events` remain exclusively Ripley â†’ Tucker. Older recipient-unaware apps never see Scout offers in those tables. No peer app's private schema is migrated by the transport.
 
-The shared source lives in `src/Doggo.Handoffs/ScoutHandoff.cs`. Tucker uses the library; Scout source-links the same protocol and native SQLite wrapper from a sibling Tucker checkout. This lets .NET 9 Tucker and .NET 11 Scout compile the same implementation without a runtime dependency on the other app. Published apps remain independent. Keep the two source revisions coordinated until the protocol is packaged separately.
+Tucker owns `src/Doggo.Handoffs/ScoutHandoff.cs`; Scout owns its independently maintained receiver adapter. Neither repository references, source-links or loads code from the other. Their compatibility boundary is the [database contract](doggo-contract.md).
 
 ## Contract and transactions
 
@@ -38,6 +38,6 @@ Scout accepts under one immediate SQLite transaction: validate route/version/dig
 
 Tucker's core and WPF suites cover sending, frozen retry, concurrent sends, legacy inbox isolation, restart status, metadata, and later additions. Scout's suites cover recipient filtering, exact selection, UI acceptance/decline, concurrent acceptance, missing/changed media, overlap, and forced transaction rollback.
 
-The sibling Scout tool `tools/Scout.HandoffRehearsal` exercises the actual sender and receiver in separate processes against a copy of an **existing offline migration snapshot**, using only synthetic media. It verifies every pre-existing database row, the source snapshot hash, integrity and foreign keys. See its README for commands.
+Scout's own `tools/Scout.HandoffRehearsal` tests frozen synthetic producer messages and its real receiver in separate processes. It can use a fresh isolated database or copy an existing offline migration snapshot and verify pre-existing rows and the source snapshot hash. It requires only Scout's checkout.
 
-Live rollout still requires fresh idle-app backups, a fresh Scout migration rehearsal, coordinated installation, and an explicit Scout storage switch. Ripley and Tucker now share a credential reader that follows Scout's persisted `storage.json` selection. They must be installed with the matching Scout build before switching. Scout's separate cutover tool prepares and verifies backups, imports only Scout's tables, saves the selection, retires the old standalone writer, and supports guarded resume/rollback. These changes have been tested only on isolated copies. Normal Scout startup uses its standalone database until the cutover tool saves a shared selection. Neither live migration nor installation is performed by these tests.
+Deployment requires idle-app backups and compatible database contracts. Ripley and Tucker read protected credentials directly from Doggo; Scout alone owns its persistent storage selection and cutover tool. Packaging and tests do not perform a live migration, install an app or modify existing media.
