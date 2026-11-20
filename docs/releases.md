@@ -1,35 +1,43 @@
-# Scout Windows packages
+# Scout Windows installers
 
-This repository builds independently. No companion checkout, shared source tree, or shared private library is required. App integration is through the versioned Doggo SQLite contract documented in [doggo-contract.md](doggo-contract.md).
+This repository owns its installer script, build scripts and workflow. No companion checkout or shared private code is required. Apps integrate through the [Doggo database contract](doggo-contract.md).
 
-## Local build
+## Build and test
 
-Use Windows, PowerShell 7, the SDK in `global.json` and Windows SDK tools (`makeappx.exe`, `signtool.exe`). Scout currently uses its pinned .NET 11 preview SDK; the other apps use .NET 9. `-DotnetPath` accepts an explicit SDK host when needed.
+Use Windows, PowerShell 7, and the .NET SDK pinned in `global.json`. Run:
 
 ```powershell
 ./eng/test.ps1
 ./eng/package.ps1 -Version 0.9.12.0 -OutputDirectory "$PWD/artifacts/distribution"
-./eng/test-published.ps1
+./eng/test-installer.ps1
 ```
 
-Choose a fresh output directory on each run. Packaging never writes the existing portable app folder, installs an app, changes a database, or starts an encode/model. Outputs are a self-contained Windows x64 portable ZIP, an **unsigned** MSIX, and SHA256 checksums. Both carry the app's own runtime, so a separately installed .NET runtime is unnecessary. MSIX requires Windows 10 version 2004 or newer. It uses full-trust desktop activation and disables AppData file virtualization so the three apps keep the same `%LOCALAPPDATA%/Doggo/doggo.db` and data survives package uninstall. Files in the installation directory remain read-only; all settings, caches and models stay outside it.
+`-DotnetPath` accepts an explicit dotnet host. Scout currently uses its pinned .NET 11 preview; Ripley and Tucker use .NET 9. Packaging provisions the official Inno Setup 7.1.1 x64 compiler under ignored `artifacts/tools`, verifies the download against a pinned SHA256, and uses upstream portable mode without registering the compiler or creating shortcuts. It does not require Visual Studio, Windows SDK packaging tools, a signing certificate, or a paid signing service.
 
-The app's database schema and settings are not imported by the installer. Existing Scout storage selection is respected. MakeMKV and FFmpeg/FFprobe remain separately configured tools. Tucker packages include the pinned HandBrake CLI, its notices, and the corresponding source archive. Model downloads and API credentials are never included.
+Choose a fresh output directory on each build. Outputs are:
 
-## Signing and releases
+- `Scout-VERSION-win-x64-setup.exe`: unsigned per-user installer.
+- `Scout-VERSION-win-x64.zip`: portable application folder.
+- `SHA256SUMS.txt`: checksums for both downloads.
 
-The package publisher defaults to `CN=Coding With Calvin`. Keep the identity and publisher stable for upgrades. Set repository variable `MSIX_PUBLISHER` to the exact subject of the production signing certificate **before** the first public release.
+Both packages include their own .NET runtime; users do not need to install .NET separately. Windows 10 version 2004 or newer on an x64-compatible system is required. Tucker also includes the pinned HandBrake CLI, upstream notices and corresponding source archive. MakeMKV and FFmpeg/FFprobe remain separately configured tools; models, credentials and media are never packaged.
 
-In each repository's GitHub `release` environment, configure `MSIX_CERTIFICATE_BASE64` (base64-encoded code-signing PFX) and `MSIX_CERTIFICATE_PASSWORD`. Do not commit a certificate or paste private keys into an issue. The signing script imports it only for the signing operation, removes its temporary file/key afterward, uses a SHA256 timestamp, and verifies the production trust chain. A hardware-backed signing service can replace this step later; none is assumed configured.
+## Install, upgrade and uninstall
 
-Pull requests, main-branch pushes and manual runs build/test this repository and upload unsigned MSIX plus portable ZIP artifacts. Only a `vMAJOR.MINOR.PATCH` (or four-component) tag starts the signing job. All tests and packaging must pass first. Missing signing secrets fail the release job; it never silently publishes an unsigned installer. Successful signing creates a **draft** GitHub release for review, not an automatic public release.
+The installer defaults to `%LOCALAPPDATA%/Programs/Coding With Calvin/Scout`, requests no administrator elevation, and creates a Start menu shortcut plus a per-user uninstall entry. It never launches the app, starts processing, or installs a background updater. Open the app from the Start menu when ready.
 
-For local signature validation only:
+The stable app identity is `CodingWithCalvin.Scout`. Keep it unchanged across releases. A newer installer updates the same directory and uninstall entry; the same version can be reinstalled. Older versions are refused. Install and uninstall check for files in use and refuse to continue until the user closes the app and its tools. They never force-close processing, schedule a reboot replacement, or restart an app.
 
-```powershell
-./eng/sign-package.ps1 -Package ./artifacts/distribution/Scout-0.9.12.0-win-x64-unsigned.msix -Development
-```
+Settings and model caches remain in their existing per-user locations. Doggo remains `%LOCALAPPDATA%/Doggo/doggo.db`; Scout retains its own persistent database selection. Installers do not migrate, copy, merge or delete app databases. Uninstall removes installer-owned files, its shortcut and its registration, preserving saved data, media and any unknown files added to the application directory. Existing external tool paths are preserved; when moving from a portable folder, review those paths before deleting the old folder.
 
-This makes a short-lived test certificate, signs the package, exports only its public `.cer`, then removes the private key. It does **not** trust the certificate, register/install the package, or change an existing app. A test-signed MSIX requires explicit certificate trust on a test machine; use a production-trusted certificate for public distribution. Never distribute a new test signing identity as a production upgrade.
+Local installer tests compile a validation variant with a unique identity, install directory and shortcut location under `artifacts/validation`. Only those locations differ from the production installer. The tests cover exact payload hashes, per-user registration, shortcuts, the installed app's isolated UI suite, file-lock refusal, upgrades, downgrade refusal, reinstall, uninstall and preservation of synthetic data. They never launch the real app entry point or open live state. On a clean GitHub-hosted runner, `eng/test-installer.ps1 -Production` additionally installs the actual release installer and exercises its real per-user registration and Start menu paths. That switch is refused outside a GitHub-hosted runner.
 
-References: [MSIX shared AppData behavior](https://learn.microsoft.com/en-us/windows/msix/desktop/flexible-virtualization), [MSIX signing](https://learn.microsoft.com/en-us/windows/msix/package/signing-package-overview).
+## GitHub releases and signing
+
+Pull requests, main pushes and manual workflows build and test this repository, then upload the installer, ZIP and checksums. A `vMAJOR.MINOR.PATCH` or four-component version tag additionally creates a **draft** GitHub release after all checks pass. No signing secrets, Azure account or certificate configuration are needed. Public publishing remains a separate review step.
+
+These installers and app executables are unsigned. Windows may show an unknown-publisher or SmartScreen warning, and some security policies can block unsigned applications. Changing installer format does not bypass Windows security. Users should verify the GitHub source and download before deciding whether to run it. Signing can be added later without changing installer technology or application identity.
+
+The previous MSIX packaging/signing scripts have been replaced. Existing MSIX test packages are separate historical artifacts; they are not upgraded or uninstalled by this installer. Inno Setup's authors request commercial license purchases for qualifying commercial use, but their current terms do not make payment mandatory.
+
+References: [Inno Setup](https://jrsoftware.org/inno-setup), [license terms](https://jrsoftware.org/inno-setup/purchase), [Windows download reputation](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).

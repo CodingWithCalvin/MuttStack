@@ -272,4 +272,4 @@ Scout is licensed under the [MIT License](LICENSE).
 
 ## Installers and CI
 
-`eng/test.ps1` validates this repository independently. `eng/package.ps1` builds a self-contained Windows x64 MSIX and portable ZIP in a new output directory. GitHub Actions runs tests and packaging per repository; version tags additionally sign and create a draft release when signing credentials are configured. See [Windows packaging and signing](docs/releases.md).
+`eng/test.ps1` validates this repository independently. `eng/package.ps1` builds an unsigned Inno Setup installer and self-contained portable ZIP in a new output directory. `eng/test-installer.ps1` checks isolated installation, upgrades, locked-file refusal, the installed app UI and uninstall with data preservation. GitHub Actions runs these checks per repository and creates draft releases for version tags without requiring signing credentials. See [Windows installers and releases](docs/releases.md).
