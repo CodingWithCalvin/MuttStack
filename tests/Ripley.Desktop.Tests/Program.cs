@@ -26,7 +26,9 @@ partial class Program
         var temp = Path.Combine(Path.GetTempPath(), "RipleyDesktopTests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(temp);
         try {
-            var app = new App(); app.InitializeComponent();
+            var app = new App { IsolatedStartup = true }; app.InitializeComponent();
+            app.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+            Check(app.MainWindow == null, "Desktop harness suppresses production startup before creating isolated windows");
             var state=Path.Combine(temp,"state");Directory.CreateDirectory(state);
             File.WriteAllText(Path.Combine(state,"settings.json"), """{"Cli":"legacy-handbrake.exe","CompressionPrefix":"OLD_"}""");
             File.WriteAllText(Path.Combine(state,"queue.json"), "[ ]");
