@@ -34,7 +34,7 @@ public static class Tvdb
     public static List<SeriesIdentity> ReadResults(JsonNode? body) => (body?["data"] as JsonArray ?? new()).Where(n=>n?["type"]?.ToString() == "series" && long.TryParse(n["tvdb_id"]?.ToString(),out var id) && id > 0).Select(n=>new SeriesIdentity("tvdb",n!["tvdb_id"]!.ToString(),n["name"]?.ToString()??"",n["year"]?.ToString()??"",n["overview"]?.ToString()??"")).ToList();
     static void Check(HttpResponseMessage response) { if(!response.IsSuccessStatusCode) throw new IOException($"TVDB returned HTTP {(int)response.StatusCode}. Check Scout's TVDB key/PIN and your connection."); }
 }
-// Both companions follow Scout's authoritative storage choice.
+// Credentials are read only through this app's implementation of the Doggo database contract.
 public static class ScoutCredentials
 {
     public static (string Key,string? Pin) Read(string folder)=>Doggo.ScoutCredentialReader.ReadTvdb(folder);

@@ -5,7 +5,7 @@ A Windows desktop app for ripping discs with MakeMKV and sending completed raw f
 ## Quick start
 
 1. Open `artifacts\app\Ripley.exe` after building.
-2. Choose **New Ripley**, insert and inspect a disc, select its series, and set the raw folder and filename format. Ripley reads saved TVDB credentials from the configured Scout data folder.
+2. Choose **New Ripley**, insert and inspect a disc, select its series, and set the raw folder and filename format. Ripley reads saved TVDB credentials from the configured Doggo database.
 3. Choose **Rip disc**. MakeMKV saves raw files and per-file metadata. The minimum title length defaults to 120 seconds; all qualifying titles are ripped.
 4. When the run completes, choose **Send to Tucker**. Tucker can be closed. Delivery creates an inbox offer and locks the completed run against duplicate work.
 5. Open Tucker's **Inbox**, review the output and preset there, and add the batch to its waiting queue. Start compression in Tucker when ready.
@@ -45,7 +45,7 @@ Set **Filename prefix** to:
 {volume_number}_{disc_number}_
 ```
 
-With volume 2, disc 2, and MakeMKV filename `ICARLY_S1_t00.mkv`, Ripley writes `2_2_ICARLY_S1_t00.mkv`. The folder format `{series} {{tvdb-{tvdb_id}}}\Season {season:00}` places it in `iCarly {tvdb-82493}\Season 01` under the raw base folder. Compressed output keeps the prefixed name, using the container extension from your preset. Padded numbers also work, for example `{volume_number:00}_{disc_number:00}_`. A blank prefix preserves MakeMKV’s filename. The prefix supports the same tokens as folder formats, but cannot contain subfolders.
+With volume 2, disc 2, and MakeMKV filename `ICARLY_S1_t00.mkv`, Ripley writes `2_2_ICARLY_S1_t00.mkv`. The folder format `{series} {{tvdb-{tvdb_id}}}\Season {season:00}` places it in `iCarly {tvdb-82493}\Season 01` under the raw base folder. Compressed output keeps the prefixed name, using the container extension from your preset. Padded numbers also work, for example `{volume_number:00}_{disc_number:00}_`. A blank prefix preserves MakeMKVÃ¢â‚¬â„¢s filename. The prefix supports the same tokens as folder formats, but cannot contain subfolders.
 
 Ripley applies filenames after MakeMKV confirms a complete rip and before it can be sent to Tucker. Each disc has a separate `.ripley-rips\<session>` folder for its log, metadata, and incomplete files. Completed raw MKVs are moved into the requested folder without overwriting existing files. The manifest records the original and final filenames; Tucker receives both names in its inbox manifest. Interrupted rips stay in their session folder and are excluded from compression imports.
 
@@ -69,7 +69,7 @@ Failed delivery exposes **Retry send to Tucker** and reuses the same ID. Offered
 
 After an interrupted send, Ripley restores and saves the run's lock from its local outbox before opening the shared database. If the database is unavailable, the original request stays frozen and can be retried when storage is available; a retry never creates a second offer or reopens an accepted request.
 
-The shared `Doggo.Handoffs` project lives in the sibling Tucker checkout. Both published apps include their own copy of its DLL. Scout's code, database and processing are not involved in this connection. Operational Ripley history and preferences remain JSON during this staged integration.
+Ripley owns `src/Ripley.Doggo`; all project references stay inside this repository. App integration uses the [Doggo database contract](docs/doggo-contract.md). Operational Ripley history and preferences remain local JSON.
 
 `tools/Ripley.Reconcile` validates completion sidecars, source size/mtime, output presence and media headers, then can explicitly record evidence in `ripley_completed_sources` and annotate history. Back up first and supply the backed-up history SHA256 when applying. This is evidence reconciliation rather than a full decode test; it creates no jobs and moves no media. Tucker skips these verified source signatures even through folder import.
 
@@ -86,12 +86,15 @@ Requires Windows, the .NET 9 SDK to build, and the .NET 9 Windows Desktop Runtim
 
 Scripts run from the repository root. The executable is published to `artifacts\app\Ripley.exe`; intermediate files, test renders and backups are under the Git-ignored `artifacts` directory.
 
-Tests use temporary state and a fake process; they do not access a physical disc or live app data. Coverage includes ripping success, cancellation, partial failure, collision-safe publication, history recovery, legacy queue preservation, inbox delivery/retry, and acknowledgement while Ripley is closed. Cross-app checks exercise Tucker acceptance and completion reconciliation. Legacy core compatibility tests remain for older saved records and metadata.
+Tests use temporary state and a fake process; they do not access a physical disc or live app data. Coverage includes ripping success, cancellation, partial failure, collision-safe publication, history recovery, legacy queue preservation, inbox delivery/retry, acknowledgement while Ripley is closed, and completion reconciliation. Contract tests simulate recipient responses through SQLite without loading Tucker.
 
 Source is under `src\Ripley`; tests and fake tools are under `tests`. The mascot source artwork and Windows icons are in `src\Ripley\Assets`.
 
 ## Scout shared storage compatibility
 
-Ripley's TVDB lookup follows Scout's persistent `storage.json` selection through the shared Doggo credential adapter. It supports legacy standalone storage before a switch, and reads the selected protected credential document from Doggo afterward. Rotated keys and PINs take effect on the next lookup; removed keys and unavailable shared storage do not fall back to stale copies. Keys remain protected in Scout and are never copied into Ripley settings or logs.
+Ripley's TVDB lookup reads the configured Doggo database directly using its own adapter. Scout must save credentials in that database. Rotated keys and PINs take effect on the next lookup; removed, ambiguous or unavailable credentials fail without searching private Scout files. Keys remain DPAPI-protected and are never copied into Ripley settings or logs.
 
-Updated Ripley holds a shared lease on Doggo storage while open. The sibling Scout cutover tool requires all Doggo apps to be closed before a live switch. These compatibility changes were tested with isolated databases and synthetic protected credentials; they do not install apps or migrate live data.
+Updated Ripley holds a shared lease on Doggo storage while open. Database cutover requires an exclusive lease with the apps closed. Tests use isolated databases and synthetic protected credentials; builds and packages do not install apps or migrate live data.
+## Installers and CI
+
+`eng/test.ps1` validates this repository independently. `eng/package.ps1` builds a self-contained Windows x64 MSIX and portable ZIP in a new output directory. GitHub Actions runs tests and packaging per repository; version tags additionally sign and create a draft release when signing credentials are configured. See [Windows packaging and signing](docs/releases.md).

@@ -11,3 +11,8 @@
 *.dpapi
 .env
 .env.*
+
+# Signing keys are never source or release artifacts.
+*.pfx
+*.p12
+*.key

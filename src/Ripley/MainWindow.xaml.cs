@@ -27,12 +27,12 @@ public partial class MainWindow : Window
         InitializeComponent();RipGrid.ItemsSource=ripQueue.Files;RawTemplate.Text=FolderNames.DefaultRaw;
         MakeMkv.Text=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"MakeMKV","makemkvcon64.exe");
         var local=Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        ScoutFolder.Text=Path.Combine(local,Directory.Exists(Path.Combine(local,"Episcout"))?"Episcout":"Scout");
+        ScoutFolder.Text=Doggo.DoggoInbox.DefaultPath;
         try {
             if(File.Exists(SettingsPath)) {
                 var s=JsonNode.Parse(File.ReadAllText(SettingsPath))!.AsObject();
                 string Value(string key,string fallback="")=>s[key]?.ToString()??fallback;
-                MakeMkv.Text=Value("MakeMkv",MakeMkv.Text);ScoutFolder.Text=Value("ScoutFolder",ScoutFolder.Text);
+                MakeMkv.Text=Value("MakeMkv",MakeMkv.Text);ScoutFolder.Text=Value("DoggoDatabase",ScoutFolder.Text);
                 RawFolder.Text=Value("Raw");Minimum.Text=Value("Minimum","120");Season.Text=Value("Season");
                 series=s["Series"]?.Deserialize<SeriesIdentity>();AutoSeason.IsChecked=s["AutoDetectSeason"]?.GetValue<bool>()??true;
                 Volume.Text=Value("VolumeNumber");DiscNumber.Text=Value("DiscNumber");FilenamePrefix.Text=Value("FilenamePrefix");RawTemplate.Text=Value("RawFormat",FolderNames.DefaultRaw);
@@ -48,7 +48,7 @@ public partial class MainWindow : Window
         try {
             SaveHistory();
             var s=File.Exists(SettingsPath)?JsonNode.Parse(File.ReadAllText(SettingsPath))!.AsObject():new JsonObject();
-            s["MakeMkv"]=MakeMkv.Text;s["Raw"]=RawFolder.Text;s["Minimum"]=int.TryParse(Minimum.Text,out var m)?m:120;s["ScoutFolder"]=ScoutFolder.Text;
+            s["MakeMkv"]=MakeMkv.Text;s["Raw"]=RawFolder.Text;s["Minimum"]=int.TryParse(Minimum.Text,out var m)?m:120;s["DoggoDatabase"]=ScoutFolder.Text;
             s["Series"]=JsonSerializer.SerializeToNode(series);s["Season"]=Season.Text;s["RawFormat"]=RawTemplate.Text;s["AutoDetectSeason"]=AutoSeason.IsChecked;
             s["VolumeNumber"]=Volume.Text;s["DiscNumber"]=DiscNumber.Text;s["FilenamePrefix"]=FilenamePrefix.Text;QueueStore.Write(SettingsPath,s);return true;
         }catch(Exception ex){Error(new IOException("Could not save settings: "+ex.Message,ex));return false;}
@@ -65,7 +65,7 @@ public partial class MainWindow : Window
     void FolderBrowse(TextBox box,string title){var d=new OpenFolderDialog{Title=title};if(d.ShowDialog(this)==true)box.Text=d.FolderName;}
     void FileBrowse(TextBox box,string filter){var d=new OpenFileDialog{Filter=filter};if(d.ShowDialog(this)==true)box.Text=d.FileName;}
     void BrowseRaw(object s,RoutedEventArgs e)=>FolderBrowse(RawFolder,"Raw-rip destination · originals are kept");
-    void BrowseScout(object s,RoutedEventArgs e)=>FolderBrowse(ScoutFolder,"Scout data folder containing scout.db");
+    void BrowseScout(object s,RoutedEventArgs e)=>FileBrowse(ScoutFolder,"Doggo database|*.db");
     void BrowseMakeMkv(object s,RoutedEventArgs e)=>FileBrowse(MakeMkv,"MakeMKV console|*.exe");
     async void SearchSeries(object s,RoutedEventArgs e)
     {

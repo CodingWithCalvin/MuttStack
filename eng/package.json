@@ -1,0 +1,17 @@
+{
+  "project": "src/Ripley/Ripley.csproj",
+  "solution": "CodingWithCalvin.Ripley.slnx",
+  "logo": "src/Ripley/Assets/Ripley.png",
+  "version": "0.1.0.0",
+  "tests": [
+    "tests/Ripley.Tests/Ripley.Tests.csproj",
+    "tests/Ripley.Desktop.Tests/Ripley.Desktop.Tests.csproj",
+    "tests/Ripley.Handoff.Tests/Ripley.Handoff.Tests.csproj"
+  ],
+  "fake": "tests/FakeCli/FakeCli.csproj",
+  "handbrake": false,
+  "name": "Ripley",
+  "tools": [
+    "tools/Ripley.Reconcile/Ripley.Reconcile.csproj"
+  ]
+}

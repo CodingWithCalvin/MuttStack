@@ -317,7 +317,7 @@
                   <Button Content="Browse…" Click="BrowseMakeMkv" DockPanel.Dock="Right" Margin="8,0,0,0" />
                   <TextBox x:Name="MakeMkv" MinWidth="440" />
                 </DockPanel>
-                <TextBlock Text="Scout data folder · saved TVDB credentials" Margin="0,14,0,0" />
+                <TextBlock Text="Doggo database · saved TVDB credentials" Margin="0,14,0,0" />
                 <DockPanel Margin="0,5,0,0">
                   <Button Content="Browse…" Click="BrowseScout" DockPanel.Dock="Right" Margin="8,0,0,0" />
                   <TextBox x:Name="ScoutFolder" />
