@@ -141,7 +141,8 @@
                 <StackPanel Margin="0">
                   <TextBlock Text="02   Choose the series" FontWeight="SemiBold" FontSize="17" />
                   <DockPanel Margin="0,5,0,7">
-                    <Button x:Name="SearchButton" Content="Search TVDB" DockPanel.Dock="Right" Click="SearchSeries" Margin="8,0,0,0" />
+                    <ComboBox x:Name="SeriesProvider" DockPanel.Dock="Right" SelectedIndex="0" MinWidth="110" Margin="8,0,0,0" SelectionChanged="SeriesProviderChanged"><ComboBoxItem Content="TMDB"/><ComboBoxItem Content="TVDB"/></ComboBox>
+                    <Button x:Name="SearchButton" Content="Search" DockPanel.Dock="Right" Click="SearchSeries" Margin="8,0,0,0" />
                     <TextBox x:Name="SeriesQuery" ToolTip="Search by series name" KeyDown="SeriesQueryKeyDown" />
                   </DockPanel>
                   <ListBox x:Name="SeriesResults" DisplayMemberPath="Display" Height="64" SelectionChanged="SeriesChanged">
@@ -227,7 +228,7 @@
                 </WrapPanel.Resources>
                 <TextBlock Text="{}{series}" />
                 <TextBlock Text="{}{year}" />
-                <TextBlock Text="{}{tvdb_id}" />
+                <TextBlock Text="{}{provider}, {id}, {tmdb_id}, {tvdb_id}" />
                 <TextBlock Text="{}{season:00}" />
                 <TextBlock Text="{}{volume_number:00}" />
                 <TextBlock Text="{}{disc_number:00}" />
@@ -317,7 +318,7 @@
                   <Button Content="Browse…" Click="BrowseMakeMkv" DockPanel.Dock="Right" Margin="8,0,0,0" />
                   <TextBox x:Name="MakeMkv" MinWidth="440" />
                 </DockPanel>
-                <TextBlock Text="Doggo database · saved TVDB credentials" Margin="0,14,0,0" />
+                <TextBlock Text="Doggo database · saved TMDB / TVDB credentials" Margin="0,14,0,0" />
                 <DockPanel Margin="0,5,0,0">
                   <Button Content="Browse…" Click="BrowseScout" DockPanel.Dock="Right" Margin="8,0,0,0" />
                   <TextBox x:Name="ScoutFolder" />

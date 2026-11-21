@@ -46,6 +46,13 @@ partial class Program
     static async Task Run(MainWindow window,string temp,string fake,string? renders)
     {
         await CheckDriveNotifications(temp);
+        Check(Control<ComboBox>(window,"SeriesProvider").SelectedIndex==0,"New Ripley metadata searches default to TMDB");
+        Control<ComboBox>(window,"SeriesProvider").SelectedIndex=1;
+        Call(window,"SavePreferences",window,new RoutedEventArgs());
+        var providerWindow=new MainWindow(Path.Combine(temp,"state"));
+        Check(Control<ComboBox>(providerWindow,"SeriesProvider").SelectedIndex==1,"Explicit TVDB search choice survives reopening");providerWindow.Close();
+        Control<ComboBox>(window,"SeriesProvider").SelectedIndex=0;
+
         Check(window.Title=="Ripley"&&window.WindowStyle==WindowStyle.None&&WindowChrome.GetWindowChrome(window).CaptionHeight==38,"Ripley keeps Scout's custom shell");
         foreach(var page in new[]{"Rip","Settings"}) {
             Call(window,"ShowPage",page);

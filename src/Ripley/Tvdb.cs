@@ -9,7 +9,7 @@ using System.Text.Json.Nodes;
 namespace Ripley;
 public record SeriesIdentity(string Provider, string Id, string Name, string Year, string Overview)
 {
-    public string Display => $"{Name} ({Year}) · TVDB {Id}";
+    public string Display => $"{Name} ({Year}) · {Provider.ToUpperInvariant()} {Id}";
 }
 public static class Tvdb
 {

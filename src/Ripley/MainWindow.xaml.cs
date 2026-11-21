@@ -32,6 +32,7 @@ public partial class MainWindow : Window
             if(File.Exists(SettingsPath)) {
                 var s=JsonNode.Parse(File.ReadAllText(SettingsPath))!.AsObject();
                 string Value(string key,string fallback="")=>s[key]?.ToString()??fallback;
+                SeriesProvider.SelectedIndex=Value("MetadataProvider","tmdb")=="tvdb"?1:0;
                 MakeMkv.Text=Value("MakeMkv",MakeMkv.Text);ScoutFolder.Text=Value("DoggoDatabase",ScoutFolder.Text);
                 RawFolder.Text=Value("Raw");Minimum.Text=Value("Minimum","120");Season.Text=Value("Season");
                 series=s["Series"]?.Deserialize<SeriesIdentity>();AutoSeason.IsChecked=s["AutoDetectSeason"]?.GetValue<bool>()??true;
@@ -49,7 +50,7 @@ public partial class MainWindow : Window
             SaveHistory();
             var s=File.Exists(SettingsPath)?JsonNode.Parse(File.ReadAllText(SettingsPath))!.AsObject():new JsonObject();
             s["MakeMkv"]=MakeMkv.Text;s["Raw"]=RawFolder.Text;s["Minimum"]=int.TryParse(Minimum.Text,out var m)?m:120;s["DoggoDatabase"]=ScoutFolder.Text;
-            s["Series"]=JsonSerializer.SerializeToNode(series);s["Season"]=Season.Text;s["RawFormat"]=RawTemplate.Text;s["AutoDetectSeason"]=AutoSeason.IsChecked;
+            s["MetadataProvider"]=SelectedProvider;s["Series"]=JsonSerializer.SerializeToNode(series);s["Season"]=Season.Text;s["RawFormat"]=RawTemplate.Text;s["AutoDetectSeason"]=AutoSeason.IsChecked;
             s["VolumeNumber"]=Volume.Text;s["DiscNumber"]=DiscNumber.Text;s["FilenamePrefix"]=FilenamePrefix.Text;QueueStore.Write(SettingsPath,s);return true;
         }catch(Exception ex){Error(new IOException("Could not save settings: "+ex.Message,ex));return false;}
     }
@@ -69,9 +70,14 @@ public partial class MainWindow : Window
     void BrowseMakeMkv(object s,RoutedEventArgs e)=>FileBrowse(MakeMkv,"MakeMKV console|*.exe");
     async void SearchSeries(object s,RoutedEventArgs e)
     {
-        SearchButton.IsEnabled=false; SearchStatus.Text="Searching TVDB…";
-        try { var result=await Tvdb.Search(SeriesQuery.Text.Trim(),ScoutFolder.Text.Trim(),CancellationToken.None); SeriesResults.ItemsSource=result; SearchStatus.Text=$"{result.Count} matches · select the correct series/year. Powered by TheTVDB."; }
-        catch(Exception ex) { SearchStatus.Text=ex.Message; } finally { SearchButton.IsEnabled=true; }
+        var provider=SelectedProvider;SearchButton.IsEnabled=false;SeriesProvider.IsEnabled=false; SearchStatus.Text=$"Searching {provider.ToUpperInvariant()}…";
+        try { var result=await MetadataSearch.Search(SeriesQuery.Text.Trim(),ScoutFolder.Text.Trim(),provider,CancellationToken.None); SeriesResults.ItemsSource=result; SearchStatus.Text=$"{result.Count} matches · select the correct series/year. Powered by {provider.ToUpperInvariant()}."; }
+        catch(Exception ex) { SearchStatus.Text=ex.Message; } finally { SearchButton.IsEnabled=true;SeriesProvider.IsEnabled=true; }
+    }
+    string SelectedProvider=>SeriesProvider.SelectedIndex==1?"tvdb":"tmdb";
+    void SeriesProviderChanged(object sender,SelectionChangedEventArgs e) {
+        if(!namingReady)return;
+        SeriesResults.ItemsSource=null;SearchStatus.Text="Search the selected provider to choose a series.";Save();
     }
     void SeriesChanged(object s,SelectionChangedEventArgs e) { if(SeriesResults.SelectedItem is SeriesIdentity identity) { series=identity; DisplaySeries(); Save(); } }
     void ClearSeries(object s,RoutedEventArgs e) { series=null; SeriesResults.SelectedItem=null; DisplaySeries(); Save(); }

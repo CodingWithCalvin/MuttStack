@@ -1,16 +1,18 @@
 # Ripley
 
+[TMDB support, provider-aware paths and compatibility](docs/tmdb.md).
+
 A Windows desktop app for ripping discs with MakeMKV and sending completed raw files to Tucker for compression. The forest-green shell matches the Doggo app collection. Raw files and disc history are retained.
 
 ## Quick start
 
 1. Open `artifacts\app\Ripley.exe` after building.
-2. Choose **New Ripley**, insert and inspect a disc, select its series, and set the raw folder and filename format. Ripley reads saved TVDB credentials from the configured Doggo database.
+2. Choose **New Ripley**, insert and inspect a disc, select its series, and set the raw folder and filename format. Ripley reads saved TMDB or TVDB credentials from the configured Doggo database.
 3. Choose **Rip disc**. MakeMKV saves raw files and per-file metadata. The minimum title length defaults to 120 seconds; all qualifying titles are ripped.
 4. When the run completes, choose **Send to Tucker**. Tucker can be closed. Delivery creates an inbox offer and locks the completed run against duplicate work.
 5. Open Tucker's **Inbox**, review the output and preset there, and add the batch to its waiting queue. Start compression in Tucker when ready.
 
-Ripley has no local compression queue, HandBrake configuration, or compression controls. Settings contains only MakeMKV and the saved TVDB credential location. The ripping file list still shows title progress, filenames and bytes written.
+Ripley has no local compression queue, HandBrake configuration, or compression controls. Settings contains only MakeMKV and the saved TMDB/TVDB credential location. The ripping file list still shows title progress, filenames and bytes written.
 
 Drives refresh on startup and Windows media notifications. Empty drives remain listed; unchanged media preserves manual values. Refresh waits during an active disc operation and never starts a rip. **Refresh** remains available for manual checks.
 
@@ -20,7 +22,10 @@ Drives refresh on startup and Windows media notifications. Empty drives remain l
 | --- | --- |
 | `{series}` or `{series_name}` | `iCarly` |
 | `{year}` | `2007` |
-| `{tvdb_id}` | `82493` |
+| `{provider}` | `tmdb` or `tvdb` |
+| `{id}` / `{series_id}` | Selected provider series ID |
+| `{tmdb_id}` | `5371` (TMDB only) |
+| `{tvdb_id}` | `82493` (TVDB only) |
 | `{season}` | `1` |
 | `{season:00}` | `01` |
 | `{volume_number}` / `{volume_number:00}` | `2` / `02` from `V2` |
@@ -36,7 +41,7 @@ Use `\` to create subfolders. Use `{{` and `}}` for literal braces. Token names 
 Default raw format:
 
 ```text
-{series} ({year}) [tvdb-{tvdb_id}]\{disc_label}
+{series} ({year}) {{{provider}-{id}}}\{disc_label}
 ```
 
 Set **Filename prefix** to:

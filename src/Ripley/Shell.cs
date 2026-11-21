@@ -17,7 +17,7 @@ public partial class MainWindow
         SettingsPage.Visibility=currentPage=="Settings"?Visibility.Visible:Visibility.Collapsed;
         NavSettings.Style=(Style)FindResource(currentPage=="Settings"?"NavActive":"NavButton");
         (PageHeading.Text,PageSubtitle.Text)=currentPage=="Settings"
-            ?("Settings","Choose MakeMKV and the saved TVDB credential location.")
+            ?("Settings","Choose MakeMKV and the shared metadata credential database.")
             :(currentRipSession?.Title??"New Ripley","Save raw files and disc metadata, then send the completed run to Tucker.");
         RefreshShell();
     }

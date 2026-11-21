@@ -12,4 +12,4 @@
     <Compile Include="../../src/Ripley/Tvdb.cs" Link="Tvdb.cs"/>
     <Compile Include="../../src/Ripley/FolderNames.cs" Link="FolderNames.cs"/>
   <Compile Include="../../src/Ripley/DiscLabelHints.cs" Link="DiscLabelHints.cs"/></ItemGroup>
-<ItemGroup><ProjectReference Include="../../src/Ripley.Doggo/Ripley.Doggo.csproj"/></ItemGroup></Project>
+<ItemGroup><ProjectReference Include="../../src/Ripley.Doggo/Ripley.Doggo.csproj"/></ItemGroup><ItemGroup><Compile Include="../../src/Ripley/MetadataSearch.cs" Link="MetadataSearch.cs"/></ItemGroup></Project>

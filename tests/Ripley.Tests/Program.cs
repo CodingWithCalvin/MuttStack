@@ -4,6 +4,7 @@ if(args.Length>1 && args[0]=="--tvdb") { var results=await Tvdb.Search("iCarly",
 var temp=Path.Combine(Path.GetTempPath(),"RipleyTests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(temp);int passed=0;
 void Check(bool value,string name){if(!value)throw new Exception(name);Console.WriteLine("PASS "+name);passed++;}
 try {
+ passed+=await TmdbTests.Run();
  var a=Directory.CreateDirectory(Path.Combine(temp,"ICARLY_S1_V1_D1")).FullName;var b=Directory.CreateDirectory(Path.Combine(temp,"ICARLY_S1_V1_D2")).FullName;var output=Directory.CreateDirectory(Path.Combine(temp,"out")).FullName;
  File.WriteAllText(Path.Combine(a,"C1_t00.mkv"),"raw one");File.WriteAllText(Path.Combine(b,"C1_t00.mkv"),"raw two");var jobs=Engine.Scan([a,b,a],output,true,".mkv");
  Check(jobs.Count==2&&jobs.Select(j=>j.Name).Distinct().Count()==2,"Disc context and overlapping source deduplication");
