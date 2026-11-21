@@ -17,7 +17,7 @@ public sealed partial class DialogueMatcher
             source["task"]=entire?"Broader search: complete original dialogue. Select candidates or abstain.":"Retrieval search: selected original passages and a provisional catalog shortlist. Set search_more if more context or catalog entries are needed.";
             var schema=JsonNode.Parse(Asset("retrieval-schema.json"))!;schema["properties"]!["candidates"]!["items"]!["enum"]=JsonSerializer.SerializeToNode(episodes.Select(e=>e.Id));
             var raw=await transport.CompleteAsync(model,endpoint,Asset("evidence-system.txt"),source,schema,ct,entire?"Searching the full episode guide":"Finding episode candidates");
-            if(raw.Count!=2||raw["candidates"] is not JsonArray ids||ids.Count>2||raw["search_more"] is not JsonValue flag||!flag.TryGetValue<bool>(out var more))throw new InvalidDataException("Invalid candidate retrieval response.");
+            if(raw.Count!=2||raw["candidates"] is not JsonArray ids||ids.Count>EpisodeRange.Maximum||raw["search_more"] is not JsonValue flag||!flag.TryGetValue<bool>(out var more))throw new InvalidDataException("Invalid candidate retrieval response.");
             var selected=new List<Episode>();
             foreach(var node in ids) {
                 if(node is not JsonValue value||!value.TryGetValue<int>(out var id)||episodes.SingleOrDefault(e=>e.Id==id) is not Episode episode||selected.Any(e=>e.Id==id))throw new InvalidDataException("Unknown or repeated retrieval candidate.");
@@ -34,7 +34,7 @@ public sealed partial class DialogueMatcher
                 catch(ModelContextException) when(batch.Count>1){int half=batch.Count/2;await Batch(batch.Take(half).ToArray());await Batch(batch.Skip(half).ToArray());}
             }
             await Batch(catalog);
-            return found.Count>2?await Search(found,true):found;
+            return found.Count>EpisodeRange.Maximum?await Search(found,true):found;
         }
         JsonObject Finish(JsonObject result) {
             result["retrieval"]=new JsonObject{["method"]=DialogueEvidence.Revision,["total_blocks"]=blocks.Count,["retrieved_blocks"]=JsonSerializer.SerializeToNode(selection.Blocks),
@@ -46,11 +46,11 @@ public sealed partial class DialogueMatcher
         var proposed=fullSearch?await Broaden():await Search(selection.Episodes,false);bool broadened=fullSearch;
         if(proposed.Count==0&&!broadened){proposed=await Broaden();broadened=true;}
         if(proposed.Count==0)return Finish(Empty());
-        var result=await AuditSpansAsync(cues,proposed,model,endpoint,ct,fullSearch?2:proposed.Count==2?2:1,broadened?null:selection);
+        var result=await AuditSpansAsync(cues,proposed,model,endpoint,ct,fullSearch?2:proposed.Count>1?2:1,broadened?null:selection);
         if(result.Text("assessment")!="supported"&&!broadened) {
             var broader=await Broaden();
             if(broader.Count>0&&!broader.Select(e=>e.Id).SequenceEqual(proposed.Select(e=>e.Id))) {
-                var previous=result.DeepClone();result=await AuditSpansAsync(cues,broader,model,endpoint,ct,broader.Count==2?2:1);result["prior_retrieval_audit"]=previous;
+                var previous=result.DeepClone();result=await AuditSpansAsync(cues,broader,model,endpoint,ct,broader.Count>1?2:1);result["prior_retrieval_audit"]=previous;
             }
         }
         return Finish(result);

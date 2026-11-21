@@ -71,13 +71,13 @@ public sealed partial class MetadataCatalog(HttpClient http,string provider,stri
     public async Task<List<SeriesIdentity>> SearchAsync(string title,CancellationToken ct) {
         if(string.IsNullOrWhiteSpace(title)||title.Length>200)throw new ArgumentException("Search titles must contain 1–200 characters.");
         var query=Uri.EscapeDataString(title);
-        var body=await Request(provider switch {"tvdb"=>"search?type=series&limit=8&query="+query,"tmdb"=>"search/tv?include_adult=false&query="+query,_=>"search/shows?q="+query},ct);
+        var body=await Request(provider switch {"tvdb"=>"search?type=series&limit=8&query="+query,"tmdb"=>"search/tv?include_adult=false&language=en-US&query="+query,_=>"search/shows?q="+query},ct);
         var rows=provider=="tvmaze"?body as JsonArray:body?[provider=="tvdb"?"data":"results"] as JsonArray;
         return (rows??[]).Select(n=>Read(provider=="tvmaze"?n?["show"]:n,true)).OfType<SeriesIdentity>().DistinctBy(s=>s.Key).Take(8).ToList();
     }
     public async Task<SeriesIdentity?> GetAsync(string id,CancellationToken ct) {
         if(!long.TryParse(id,out var number)||number<=0)throw new ArgumentException("Invalid series ID.");
-        var body=await Request((provider switch {"tvdb"=>"series/","tmdb"=>"tv/",_=>"shows/"})+number,ct);
+        var body=await Request((provider switch {"tvdb"=>"series/","tmdb"=>"tv/",_=>"shows/"})+number+(provider=="tmdb"?"?language=en-US":""),ct);
         var result=Read(provider=="tvdb"?body?["data"]:body);
         if(result!=null&&result.Id!=number.ToString())throw new InvalidDataException("Catalog returned a different series ID.");
         return result;
@@ -98,9 +98,9 @@ public sealed partial class MetadataCatalog(HttpClient http,string provider,stri
         }
         if(provider=="tvmaze")Add(await Request($"shows/{number}/episodes?specials=1",ct) as JsonArray);
         else if(provider=="tmdb") {
-            var series=await Request($"tv/{number}",ct)??throw new InvalidDataException("Series not found.");
+            var series=await Request($"tv/{number}?language=en-US",ct)??throw new InvalidDataException("Series not found.");
             foreach(var season in series.Array("seasons").Select(s=>s.Int("season_number")).Distinct()) {
-                var body=await Request($"tv/{number}/season/{season}",ct);Add(body?["episodes"] as JsonArray);
+                var body=await Request($"tv/{number}/season/{season}?language=en-US",ct);Add(body?["episodes"] as JsonArray);
             }
         }else {
             for(int page=0;page<1000;page++) {

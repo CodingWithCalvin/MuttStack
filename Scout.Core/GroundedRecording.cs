@@ -11,8 +11,8 @@ public static class GroundedRecording
            raw["recording"] is not JsonObject recording||recording.Count!=3||recording["candidates"] is not JsonArray members)
             throw new InvalidDataException("One recording-level coverage decision and every candidate audit are required.");
         var kind=recording.Text("kind");
-        int count=kind switch {"single_episode" or "incomplete_episode"=>1,"continuous_parts" or "separate_episodes"=>2,"unresolved"=>0,_=>-1};
-        if(count<0||members.Count!=count)throw AssignmentValidation.Reject(AssignmentIssue.CoverageMismatch,"Recording coverage must select exactly one episode, two episodes, or no episodes when unresolved.");
+        int count=kind switch {"single_episode" or "incomplete_episode"=>1,"continuous_parts" or "separate_episodes"=>members.Count is >=2 and <=EpisodeRange.Maximum?members.Count:-1,"unresolved"=>0,_=>-1};
+        if(count<0||members.Count!=count)throw AssignmentValidation.Reject(AssignmentIssue.CoverageMismatch,"Recording coverage must select one episode, two to four episodes, or no episodes when unresolved.");
         ModelOutputQuality.ValidateText(recording["reason"],"recording coverage reason",240);
         var selected=new List<int>();
         foreach(var member in members) {
@@ -28,7 +28,7 @@ public static class GroundedRecording
             var type=EpisodeCoverage.Content(audit.Text("content_type"));
             if(selected.Contains(index)) {
                 if(type is "preview_or_promo" or "recap")throw AssignmentValidation.Reject(AssignmentIssue.PromotionalContent,"Promotional or recap evidence cannot be selected in a recording assignment.");
-                if(count==2&&type=="incomplete_episode")throw AssignmentValidation.Reject(AssignmentIssue.IncompleteCombinedStory,"Both selected catalog installments require complete coverage; an incomplete installment cannot complete a combined recording.");
+                if(count>1&&type=="incomplete_episode")throw AssignmentValidation.Reject(AssignmentIssue.IncompleteCombinedStory,"Every selected catalog installment requires complete coverage; an incomplete installment cannot complete a combined recording.");
                 if(type!=(kind=="incomplete_episode"?"incomplete_episode":"complete_episode"))
                     throw AssignmentValidation.Reject(AssignmentIssue.CoverageMismatch,"The recording decision disagrees with the selected candidate's completeness.");
             }else if(kind!="unresolved"&&(type is "complete_episode" or "incomplete_episode")&&audit["statements"] is JsonArray facts&&

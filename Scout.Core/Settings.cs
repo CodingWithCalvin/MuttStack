@@ -11,7 +11,7 @@ public sealed class AppSettings
     public SpeechSettings Speech {get;set;}=new();
     public string DestinationTemplate {get;set;}="";
     public NamingOptions Naming {get;set;}=new();
-    public string MetadataProvider {get;set;}="tvdb";
+    public string MetadataProvider {get;set;}="tmdb";
     public bool UseSubtitleMatching {get;set;}=true;
     public string Provider {get;set;}="local";
     public string LocalModel {get;set;}="";

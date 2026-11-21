@@ -125,14 +125,14 @@ public static class NamingDsl {
  };
  public static (string Folder,string File) Render(string template,string series,IReadOnlyList<Episode> episodes,int part=0,int parts=0,SeriesIdentity? identity=null,bool collapsePartTitles=true) {
   Validate(template);var first=episodes[0];var components=Components(template);
-  var code=first.Code+(episodes.Count==2?$"-E{episodes[1].Number:00}":"");
+  var code=first.Code+(episodes.Count>1?$"-E{episodes[^1].Number:00}":"");
   var titles=collapsePartTitles?NamingTitles.For(episodes):episodes.Select(e=>e.Title).ToList();
   string Token(Match m) {
    if(m.Value=="{{")return "{";if(m.Value=="}}")return "}";var expression=Parse(m.Groups[1].Value);var token=expression.Token;
    if(token is "provider" or "id"){if(identity==null)throw new ArgumentException("Select a metadata identity for provider and ID tokens.");identity.Validate();}
    var values=token=="titles"?titles.ToList():new List<string>{token switch {
     "series"=>series,"title"=>string.Join(" and ",titles),"code"=>code,
-    "season"=>first.Season.ToString(),"season:00"=>first.Season.ToString("00"),"episode"=>first.Number.ToString()+(episodes.Count==2?$"-E{episodes[1].Number:00}":""),"episode:00"=>first.Number.ToString("00")+(episodes.Count==2?$"-E{episodes[1].Number:00}":""),
+    "season"=>first.Season.ToString(),"season:00"=>first.Season.ToString("00"),"episode"=>first.Number.ToString()+(episodes.Count>1?$"-E{episodes[^1].Number:00}":""),"episode:00"=>first.Number.ToString("00")+(episodes.Count>1?$"-E{episodes[^1].Number:00}":""),
     "provider"=>identity!.Provider,"id"=>identity!.Id,"year"=>identity?.Year is {Length:>0} year?year:throw new ArgumentException("Select a catalog show with a release year before using {year}."),"part"=>parts>0?part.ToString():"","parts"=>parts>0?parts.ToString():"","partSuffix"=>parts>0?$" (Part {part} of {parts})":"",_=>""
    }};
    foreach(var op in expression.Operations)values=op.Name=="join"?[string.Join(op.Args[0],values)]:values.Select(v=>op.Name=="remove"?(op.Target is {} target?Remove(v,target):v.Replace(op.Args[0],"",StringComparison.Ordinal)):Transform(v,op.Name,op.Args)).ToList();

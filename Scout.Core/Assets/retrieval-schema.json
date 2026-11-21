@@ -4,7 +4,7 @@
   "properties": {
     "candidates": {
       "type": "array",
-      "maxItems": 2,
+      "maxItems": 4,
       "items": {
         "type": "integer",
         "enum": [

@@ -77,6 +77,12 @@ public sealed class ShowDiscovery(IMetadataCatalog catalog,Func<string,IEnumerab
             if(series!=null)Add(series,"Existing provider ID in folder or filename; verified in the catalog.");
             else result.Notes.Add($"{catalog.Provider}-{id} was not found in the catalog.");
         }
+        if(catalog is IExternalSeriesLookup externalLookup && catalog.Provider=="tmdb") {
+            foreach(var tvdbId in result.Clues.Where(c=>c.Provider=="tvdb"&&c.Id!=null).Select(c=>c.Id!).Distinct().Take(4)) {
+                var linked=await externalLookup.FindTvdbAsync(tvdbId,ct);
+                if(linked!=null)Add(linked,"Original TVDB series ID independently confirmed by TMDB external IDs; episode numbering still uses the TMDB guide.");
+            }
+        }
         var clues=result.Clues.Where(c=>c.Title.Length>0).GroupBy(c=>Normalize(c.Title)).OrderByDescending(g=>g.Count()).Take(3).Select(g=>g.First()).ToList();
         foreach(var clue in clues) {
             progress.Report("Searching "+catalog.Provider+": "+clue.Title);

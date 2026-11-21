@@ -4,18 +4,28 @@ namespace Scout.Core.Subtitles;
 
 public sealed record SubtitleAttempt(JsonObject Details,JsonObject? Result);
 public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cacheRoot) {
+ JsonArray reviews=[];
+ public void UseReviewedReferences(JsonObject report) {reviews=report.Array("human_resolutions").DeepClone().AsArray();scope=null;}
  string? scope;List<ReferenceCandidate> candidates=[];HashSet<string> common=[];string note="",referenceHash="";
  public async Task<SubtitleAttempt> IdentifyAsync(IReadOnlyList<Cue> cues,IReadOnlyList<Episode> catalog,SeriesIdentity series,IProgress<string> progress,CancellationToken ct) {
-  var current=series.Key+":"+SubtitleResult.CatalogHash(catalog);ct.ThrowIfCancellationRequested();
+  var current=series.Key+":"+SubtitleResult.CatalogHash(catalog)+":"+CollectionResolver.Hash(reviews.ToJsonString());ct.ThrowIfCancellationRequested();
   if(scope!=current) {
    var loaded=await source.LoadAsync(series,catalog,progress,ct);
    if(loaded.Series.Key!=series.Key)throw new InvalidDataException("Subtitle references belong to another provider series.");
-   var refs=loaded.References.Select(r=>new MappedReference(new(r.Id,series.Name,r.Name,r.Url,TranscriptComparison.Index(r.Cues)),r.Archive,r.Season,TitleMapping.Label(r.Name),TitleMapping.Find(r.Name,catalog,r.Id))).ToArray();
+   var refs=loaded.References.Select(r=>{
+    var index=TranscriptComparison.Index(r.Cues);
+    var direct=TitleMapping.Find(r.Name,catalog,r.Id);
+    var reviewed=ReviewedReferenceMapping.Find(reviews,r,index,catalog,series,out bool blocked);
+    // A reviewed identity cannot silently override a conflicting titled identity.
+    blocked|=direct!=null&&reviewed!=null&&direct.Key!=reviewed.Key;
+    var link=blocked?null:reviewed??direct;
+    return new MappedReference(new(r.Id,series.Name,r.Name,r.Url,index),r.Archive,r.Season,TitleMapping.Label(r.Name),link,blocked);
+   }).ToArray();
    common=TranscriptComparison.Common(refs.Select(r=>r.Reference.Index).ToArray());
    candidates=ReferenceMatcher.Candidates(refs,common,ct);ct.ThrowIfCancellationRequested();
    referenceHash=CollectionResolver.Hash(JsonSerializer.Serialize(loaded.References.OrderBy(r=>r.Id),Data.Options));note=loaded.Note;scope=current;
   }
-  var cacheKey=CollectionResolver.Hash(JsonSerializer.Serialize(new{SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,current,referenceHash,cues},Data.Options));
+  var cacheKey=CollectionResolver.Hash(JsonSerializer.Serialize(new{SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,multipartRevision=3,current,referenceHash,cues},Data.Options));
   var path=Path.Combine(cacheRoot,"decisions",cacheKey+".json");
   if(ScoutStorage.Exists(path))try {
    var saved=Data.Read(path);var savedResult=saved["result"] as JsonObject;
@@ -26,19 +36,20 @@ public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cache
   var index=TranscriptComparison.Index(cues);var decision=ReferenceMatcher.Match(index,candidates,common,ct);ct.ThrowIfCancellationRequested();
   var best=decision.Best;
   var episodes=decision.ProviderMapped?best!.Candidate.Link!.Episodes:[];
-  // The app currently represents at most two consecutive catalog episodes.
-  bool supported=decision.ProviderMapped&&episodes.Length is 1 or 2&&(episodes.Length==1||episodes[0].Season==episodes[1].Season&&episodes[0].Number+1==episodes[1].Number);
+  // Accept only a bounded, consecutive provider assignment.
+  bool supported=decision.ProviderMapped&&EpisodeRange.Valid(episodes);
   var details=JsonSerializer.SerializeToNode(new{version=SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,accepted=supported,provider=series.Provider,seriesId=series.Id,
-   catalogHash=SubtitleResult.CatalogHash(catalog),dialogueHash=SubtitleResult.DialogueHash(cues),referenceHash,referenceFiles=candidates.Count(c=>c.Parts.Length==1),
-   reason=decision.Reason,note,decision.Margin,selectedEpisodes=episodes,
+   reviewResolutionIds=reviews.Where(r=>supported&&!r.Bool("undone")&&r?["subtitle_reference_review"] is {} review&&
+    best!.Candidate.Link!.EvidenceReferences.Contains(review["reference"].Text("id"))).Select(r=>r.Text("id")).ToArray(),catalogHash=SubtitleResult.CatalogHash(catalog),dialogueHash=SubtitleResult.DialogueHash(cues),referenceHash,referenceFiles=candidates.Count(c=>c.Parts.Length==1),
+   reason=decision.ProviderMapped&&!supported?"Reference coverage must be one to four consecutive episodes in one season.":decision.Reason,note,decision.Margin,selectedEpisodes=episodes,
    best=best==null?null:new{best.Candidate.Id,best.Candidate.Name,best.Candidate.Link,best.Overlap,best.OrderedParts,best.CompleteExtent,best.Parts,
-    references=best.Candidate.Parts.Select(p=>new{p.Reference.Id,p.Reference.Name,p.Reference.Url})},
+    references=best.Candidate.Parts.Select(p=>new{p.Reference.Id,p.Reference.Name,p.Reference.Url,contentHash=ReviewedReferenceMapping.Digest(p.Reference.Index)})},
    alternatives=decision.Ranking.Skip(1).Take(3).Select(r=>new{r.Candidate.Name,r.Overlap.Score,episodeIds=r.Candidate.Link?.Episodes.Select(e=>e.Id)})},Data.Options)!.AsObject();
   JsonObject? result=null;
   if(supported) {
    var evidence=cues.Where(c=>TranscriptComparison.Index([c.Text]).Phrases.Keys.Any(p=>!common.Contains(p)&&best!.Candidate.Index.Phrases.ContainsKey(p))).ToArray();
    var quotes=Enumerable.Range(0,Math.Min(4,evidence.Length)).Select(i=>evidence[i*(evidence.Length-1)/Math.Max(1,Math.Min(4,evidence.Length)-1)]).Distinct().ToArray();
-   result=new JsonObject{["assessment"]="supported",["coverage"]=episodes.Length==2?"combined":"complete",["method"]=SubtitleResult.Version,["dialogue_hash"]=SubtitleResult.DialogueHash(cues),
+   result=new JsonObject{["assessment"]="supported",["coverage"]=episodes.Length>1?"combined":"complete",["method"]=SubtitleResult.Version,["dialogue_hash"]=SubtitleResult.DialogueHash(cues),
     ["summary"]="Distinctive dialogue matches subtitle references linked to the configured provider's episode titles. This is subtitle evidence, not an AI assessment.",
     ["matches"]=JsonSerializer.SerializeToNode(episodes.Select(e=>new{episodeId=e.Id,episodeTitle=e.Title,reason="Subtitle dialogue and provider-title mapping support this assignment.",evidence=quotes.Select(c=>new{start=c.Start,sourceText=c.Text})}),Data.Options),
     ["candidate_checks"]=new JsonArray(),["alternatives"]=new JsonArray()};
@@ -79,10 +90,10 @@ public static class SubtitleResult {
    new SeriesIdentity(proof.Text("provider"),proof.Text("series_id"),"Saved subtitle series").Validate();
    var selected=proof["selected_episodes"]!.Deserialize<List<Episode>>(Data.Options)!;
    var candidates=row.Array("candidates").Select(c=>Data.Episode(c!["episode"]!)).ToArray();
-   if(selected.Count is <1 or >2||!JsonNode.DeepEquals(JsonSerializer.SerializeToNode(selected,Data.Options),JsonSerializer.SerializeToNode(candidates,Data.Options)))return false;
+   if(!EpisodeRange.Valid(selected)||!JsonNode.DeepEquals(JsonSerializer.SerializeToNode(selected,Data.Options),JsonSerializer.SerializeToNode(candidates,Data.Options)))return false;
    if(catalog!=null&&selected.Any(e=>!JsonNode.DeepEquals(JsonSerializer.SerializeToNode(e,Data.Options),JsonSerializer.SerializeToNode(catalog.SingleOrDefault(c=>c.Id==e.Id),Data.Options))))return false;
-   if(selected.Count==2&&(selected[0].Season!=selected[1].Season||selected[0].Number+1!=selected[1].Number))return false;
-   if(result.Text("assessment")!="supported"||result.Text("coverage")!=(selected.Count==2?"combined":"complete")||!result.Array("matches").Select(m=>m.Int("episode_id")).SequenceEqual(selected.Select(e=>e.Id)))return false;
+
+   if(result.Text("assessment")!="supported"||result.Text("coverage")!=(selected.Count>1?"combined":"complete")||!result.Array("matches").Select(m=>m.Int("episode_id")).SequenceEqual(selected.Select(e=>e.Id)))return false;
    var best=proof["best"]!;var score=best["overlap"]!.Deserialize<Overlap>(Data.Options)!;
    if(!ReferenceMatcher.Strong(score)||proof["margin"]!.GetValue<double>()<.15||!best.Bool("ordered_parts")||!best.Bool("complete_extent")||!best["link"].Bool("complete")||best.Array("references").Count==0)return false;
    if(!best["link"]!.Array("episodes").Select(e=>e.Int("id")).SequenceEqual(selected.Select(e=>e.Id)))return false;

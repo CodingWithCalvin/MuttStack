@@ -45,7 +45,7 @@ public partial class MainWindow {
   PersistSetup();SaveDraft();
   var inherited=workspace!=null&&string.Equals(Path.GetFullPath(workspace.Library),Path.GetFullPath(folder),StringComparison.OrdinalIgnoreCase)?workspace.RestoreSetup() with {}:null;
   var sample=inherited!=null?workspace!.DiscoveryFiles.ToList():new List<string>();
-  var created=workspaces.CreateRun(folder);created.Setup=inherited;created.SeriesIdentity=null;created.DiscoveryFiles=[];workspaces.Save(created);workspace=created;
+  var created=workspaces.CreateRun(folder);created.Setup=inherited??new ScoutSetup{MetadataProvider=appSettings.MetadataProvider};created.SeriesIdentity=null;created.DiscoveryFiles=[];workspaces.Save(created);workspace=created;
   report=null;reportPath=null;previewHtml=null;groups=[];
   SeriesName.Text="";LibraryPath.Text=workspace.Library;LibraryPath.IsReadOnly=true;catalogPath="";dialoguePath="";
   outputPath=workspaces.DirectoryFor(workspace);

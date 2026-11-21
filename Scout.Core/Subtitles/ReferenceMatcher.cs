@@ -32,24 +32,23 @@ static class ReferenceMatcher {
    var link=best.a.Link!;
    return link with {Method="dialogue-link-to-provider-titled-reference",Complete=link.Complete&&!partial,EvidenceReferences=[best.a.Reference.Id]};
   }
-  var mapped=references.Select(r=>r with {Link=Bridge(r.Reference.Index,r.Link,r.Label?.Part>0)}).ToArray();
+  var mapped=references.Select(r=>r with {Link=r.MappingBlocked?null:Bridge(r.Reference.Index,r.Link,r.Label?.Part>0)}).ToArray();
   var result=mapped.Select(r=>new ReferenceCandidate(r.Reference.Id,[r],r.Reference.Index,r.Link)).ToList();
-  foreach(var first in mapped.Where(r=>r.Label is {Part:1,TotalParts:0 or 2})) {
-   if(mapped.Any(r=>r.Archive==first.Archive&&r.Label?.Season==first.Label!.Season&&r.Label.Family==first.Label.Family&&r.Label.Part>2))continue;
-   var second=mapped.Where(r=>r.Label is {Part:2,TotalParts:0 or 2}&&r.Archive==first.Archive&&r.Reference.Series==first.Reference.Series&&r.Label.Season==first.Label!.Season&&r.Label.Family==first.Label.Family&&r.Label.First>=first.Label.First&&r.Label.First<=first.Label.Last+1).ToArray();
-   if(second.Length!=1)continue;
-   // Exactly one counterpart in the release family; ambiguous editions stay single.
-   var next=second[0];
-   if(mapped.Count(r=>r.Label?.Part==1&&r.Archive==first.Archive&&r.Label.Family==first.Label!.Family&&r.Label.Season==first.Label.Season&&next.Label!.First>=r.Label.First&&next.Label.First<=r.Label.Last+1)!=1)continue;
-   var combined=TranscriptComparison.Combine(first.Reference.Index,next.Reference.Index);
+  foreach(var family in mapped.Where(r=>r.Label?.Part>0).GroupBy(r=>(r.Archive,r.Reference.Series,r.Label!.Season,r.Label.Family))) {
+   var parts=family.OrderBy(r=>r.Label!.Part).ToArray();
+   if(parts.Length is <2 or >EpisodeRange.Maximum || parts.Where((p,i)=>p.Label!.Part!=i+1 || p.Label.TotalParts!=0&&p.Label.TotalParts!=parts.Length).Any())continue;
+   if(parts.Zip(parts.Skip(1)).Any(p=>p.Second.Label!.First<p.First.Label!.First || p.Second.Label.First>p.First.Label.Last+1))continue;
+   var combined=parts.Select(p=>p.Reference.Index).Aggregate((a,b)=>TranscriptComparison.Combine(a,b));
    ProviderLink? link=null;
-   if(first.Link is {} a&&next.Link is {} b) {
-    var episodes=a.Episodes.Concat(b.Episodes).DistinctBy(e=>e.Id).OrderBy(e=>e.Season).ThenBy(e=>e.Number).ToArray();
-    if(a.Key==b.Key&&episodes.Length==1&&!a.Complete&&!b.Complete||a.Key!=b.Key&&a.Complete&&b.Complete&&episodes.Length==2&&episodes[0].Season==episodes[1].Season&&episodes[0].Number+1==episodes[1].Number)
-     link=new(episodes,"ordered-reference-parts",true,a.EvidenceReferences.Concat(b.EvidenceReferences).Distinct().ToArray());
+   if(parts.All(p=>p.Link!=null)) {
+    var links=parts.Select(p=>p.Link!).ToArray();
+    var episodes=links.SelectMany(l=>l.Episodes).DistinctBy(e=>e.Id).OrderBy(e=>e.Season).ThenBy(e=>e.Number).ToArray();
+    bool whole=episodes.Length==1&&links.All(l=>!l.Complete&&l.Key==links[0].Key);
+    bool range=links.All(l=>l.Complete)&&episodes.Length==links.Sum(l=>l.Episodes.Length)&&EpisodeRange.Valid(episodes);
+    if(whole||range)link=new(episodes,"ordered-reference-parts",true,links.SelectMany(l=>l.EvidenceReferences).Distinct().ToArray());
    }
-   link=Bridge(combined,link,false);
-   result.Add(new(first.Reference.Id+"+"+next.Reference.Id,[first,next],combined,link));
+   link=parts.Any(p=>p.MappingBlocked)?null:Bridge(combined,link,false);
+   result.Add(new(string.Join("+",parts.Select(p=>p.Reference.Id)),parts,combined,link));
   }
   return result;
  }
@@ -60,13 +59,13 @@ static class ReferenceMatcher {
   bool Equivalent(CandidateScore other) {
    if(other.Candidate.Id==best.Candidate.Id)return true;
    if(best.Candidate.Link!=null&&other.Candidate.Link?.Key==best.Candidate.Link.Key)return true;
-   if(best.OrderedParts&&best.Candidate.Parts.Length==2&&other.Candidate.Parts.All(p=>best.Candidate.Parts.Any(b=>b.Reference.Id==p.Reference.Id)))return true;
+   if(best.OrderedParts&&best.Candidate.Parts.Length>1&&other.Candidate.Parts.All(p=>best.Candidate.Parts.Any(b=>b.Reference.Id==p.Reference.Id)))return true;
    return best.Candidate.Index.Words.SequenceEqual(other.Candidate.Index.Words);
   }
   double margin=best.Overlap.Score-(ranking.FirstOrDefault(r=>!Equivalent(r))?.Overlap.Score??0);
   bool text=Strong(best.Overlap)&&best.OrderedParts&&best.CompleteExtent&&margin>=.15;
   bool mapped=text&&best.Candidate.Link?.Complete==true;
-  string reason=!Strong(best.Overlap)?"No reference covers enough distinctive dialogue.":!best.OrderedParts?"Both parts must cover substantial, separate, ordered portions; recaps/promos do not qualify.":!best.CompleteExtent?"Shared dialogue does not extend through both the recording and reference; possible partial recording.":margin<.15?"Competing dialogue references remain too close.":best.Candidate.Link==null?"Dialogue matches, but a unique provider title/ID mapping is missing or conflicting.":!best.Candidate.Link.Complete?"Only part of a provider episode is represented.":"Dialogue correspondence and a unique provider catalog mapping are supported.";
+  string reason=!Strong(best.Overlap)?"No reference covers enough distinctive dialogue.":!best.OrderedParts?"All parts must cover substantial, separate, ordered portions; recaps/promos do not qualify.":!best.CompleteExtent?"Shared dialogue does not extend through both the recording and reference; possible partial recording.":margin<.15?"Competing dialogue references remain too close.":best.Candidate.Link==null?"Dialogue matches, but a unique provider title/ID mapping is missing or conflicting.":!best.Candidate.Link.Complete?"Only part of a provider episode is represented.":"Dialogue correspondence and a unique provider catalog mapping are supported.";
   return new(text,mapped,reason,best,margin,ranking.Take(8).ToArray());
  }
  static CandidateScore Score(TranscriptIndex source,ReferenceCandidate candidate,HashSet<string> common) {
@@ -89,7 +88,7 @@ static class ReferenceMatcher {
    var overlap=TranscriptComparison.Compare(source,index,excluded);
    support.Add(new(part.Reference.Id,shared.Length/(double)Math.Max(1,source.Phrases.Keys.Count(p=>!common.Contains(p))),overlap.ReferenceCoverage,shared.Length,overlap.ReferenceSections,start,end));
   }
-  bool ordered=support.All(s=>s.SharedPhrases>=60&&s.SourceCoverage>=.15&&s.ReferenceCoverage>=.45&&s.ReferenceSections>=3&&s.EndFraction-s.StartFraction>=.15)&&support[0].EndFraction<support[1].StartFraction;
+  bool ordered=support.All(s=>s.SharedPhrases>=60&&s.SourceCoverage>=.15&&s.ReferenceCoverage>=.45&&s.ReferenceSections>=3&&s.EndFraction-s.StartFraction>=.15)&&support.Zip(support.Skip(1)).All(p=>p.First.EndFraction<p.Second.StartFraction);
   return new(candidate,overall,ordered,support.ToArray(),complete);
  }
 }

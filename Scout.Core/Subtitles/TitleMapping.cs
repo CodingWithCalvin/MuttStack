@@ -8,7 +8,7 @@ sealed record ProviderLink(Episode[] Episodes,string Method,bool Complete,string
 }
 static class TitleMapping {
  public static string Key(string value)=>Regex.Replace(value.ToLowerInvariant(),@"[^\p{L}\p{N}]","");
- static readonly Regex Code=new(@"(?i)(?:\bS(?<s>\d{1,2})[ ._-]*E(?<e>\d{1,3})(?:[ab])?(?:[- ]E?(?<end>\d{1,3}))?|(?<!\d)(?<s>\d{1,2})x(?<e>\d{1,3})(?:-(?<end>\d{1,3}))?|(?<!\d)(?<s>\d{2})\.(?<e>\d{2})(?:-(?<end>\d{2}))?)(?!\d)");
+ static readonly Regex Code=new(@"(?i)(?:\bS(?<s>\d{1,2})[ ._-]*E(?<e>\d{1,3})(?:[ab])?(?:[- ]E?(?<end>\d{1,3})|(?<joined>(?:E\d{1,3})+))?|(?<!\d)(?<s>\d{1,2})x(?<e>\d{1,3})(?:-(?<end>\d{1,3}))?|(?<!\d)(?<s>\d{2})\.(?<e>\d{2})(?:-(?<end>\d{2}))?)(?!\d)");
  static readonly Regex PartSuffix=new(@"(?i)\s*(?:\((?:part\s*)?(?<n>\d+)\)|[-:. ]+part\s*(?<n>\d+)(?:\s+of\s+\d+)?)\s*$");
  public static (string Base,int Part) SplitTitle(string title) {
   var m=PartSuffix.Match(title);return m.Success?(Key(title[..m.Index]),int.Parse(m.Groups["n"].Value)):(Key(title),0);
@@ -17,7 +17,12 @@ static class TitleMapping {
   var file=Path.GetFileNameWithoutExtension(name);var code=Code.Match(file);if(!code.Success)return null;
   var part=Regex.Match(file,@"(?i)\bpart[ ._-]*(\d+)(?:[ ._-]*of[ ._-]*(\d+))?");
   int first=int.Parse(code.Groups["e"].Value),last=code.Groups["end"].Success?int.Parse(code.Groups["end"].Value):first;
-  if(last<first||last-first>3)return null;
+  if(code.Groups["joined"].Success) {
+   var numbers=Regex.Matches(code.Groups["joined"].Value,@"(?i)E(\d+)").Select(m=>int.Parse(m.Groups[1].Value)).ToArray();
+   if(numbers.Where((n,i)=>n!=first+i+1).Any())return null;
+   last=numbers[^1];
+  }
+  if(last<first||last-first>=EpisodeRange.Maximum)return null;
   var family=Key(Code.Replace(Regex.Replace(file,@"(?i)\bpart[ ._-]*\d+(?:[ ._-]*of[ ._-]*\d+)?",""),"CODE"));
   return new(int.Parse(code.Groups["s"].Value),first,last,part.Success?int.Parse(part.Groups[1].Value):0,family,part.Groups[2].Success?int.Parse(part.Groups[2].Value):0);
  }

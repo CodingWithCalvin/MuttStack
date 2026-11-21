@@ -2,7 +2,7 @@ using System.Text.Json;
 namespace Scout.Core;
 public sealed record ScoutSetup {
  public string Mode {get;set;}="known";
- public string MetadataProvider {get;set;}="tvdb";
+ public string MetadataProvider {get;set;}="tmdb";
  public string Query {get;set;}="";
  public string? CandidateKey {get;set;}
 }

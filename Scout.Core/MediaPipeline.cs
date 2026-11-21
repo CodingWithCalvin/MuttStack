@@ -40,6 +40,10 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
         var reportPath=Path.Combine(settings.Output,"report.json");
         var continuing=settings.Restart||settings.Reanalyze||settings.ReviewIssues||settings.NewFilesOnly;
         var previous=continuing&&ScoutStorage.Exists(reportPath)?Data.Read(reportPath):new JsonObject();
+        if(previous["series_identity"] is JsonObject previousIdentity && settings.SeriesIdentity is {} selectedIdentity &&
+            previousIdentity.Text("provider")+":"+previousIdentity.Text("id")!=selectedIdentity.Key)
+            throw new InvalidOperationException("This Scout has results for another catalog identity. Create a new Scout to change providers; its old results and move history are retained.");
+        subtitles?.UseReviewedReferences(previous);
         var contentOptions=settings.ContentOptions??ScoutContentOptions.Read(previous);
         var allEpisodes=episodes;
         if(contentOptions is {IncludeBonusContent:false}) {

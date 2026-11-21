@@ -21,8 +21,9 @@ public partial class MainWindow
             var path=dialog.SelectedRow.Text("path");var fingerprint=CollectionResolver.FingerprintKey(dialog.SelectedRow["primary_fingerprint"]);
             await SaveResolution(fresh=>{
                 var row=fresh.Array("files").OfType<JsonObject>().Single(r=>r.Text("path")==path&&CollectionResolver.FingerprintKey(r["primary_fingerprint"])==fingerprint);
-                HumanResolution.Apply(fresh,row,dialog.SelectedEpisode,catalog,dialog.Note);
-            },path,$"Human override: {Path.GetFileName(path)} assigned to {dialog.SelectedEpisode.Code} · {dialog.SelectedEpisode.Title}.");
+                var resolutionId=HumanResolution.Apply(fresh,row,dialog.SelectedEpisodes,catalog,dialog.Note);
+                if(dialog.ReviewSubtitleReference)Scout.Core.Subtitles.ReviewedReferenceMapping.Save(fresh,row,dialog.SelectedEpisodes,catalog,resolutionId);
+            },path,$"Human override: {Path.GetFileName(path)} assigned to {string.Join(", ",dialog.SelectedEpisodes.Select(e=>e.Code+" · "+e.Title))}.");
         }catch(Exception ex){Error(ex);}
     }
     private async void UndoAssignment(object sender,RoutedEventArgs e) {

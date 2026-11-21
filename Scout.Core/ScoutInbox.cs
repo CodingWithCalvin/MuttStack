@@ -95,7 +95,7 @@ public sealed partial class ScoutDatabase
                 DestinationMode = "default",
                 Name = identity?.Name ?? batch.RunName, Library = library, SeriesIdentity = identity, SourceHandoffId = id,
                 SelectedFiles = files.Select(f => f.Path).ToList(), SelectionScope = new("files"),
-                Setup = new ScoutSetup { Mode = identity == null ? "discover" : "known", MetadataProvider = identity?.Provider ?? "tvdb",
+                Setup = new ScoutSetup { Mode = identity == null ? "discover" : "known", MetadataProvider = identity?.Provider ?? "tmdb",
                     Query = identity?.Name ?? "", CandidateKey = identity?.Key },
                 Events = [$"Accepted {files.Count} compressed outputs from Tucker: {batch.RunName} (handoff {batch.Id}). Waiting for Start Scout."]
             };

@@ -33,7 +33,7 @@ public sealed partial class DialogueMatcher {
     JsonObject result;
     try{result=await DirectAsync(cues,candidates,model,endpoint,true,ct,task);}
     catch(InvalidDataException ex) when(GroundableCombination(ex)){return await AuditRejectedCombinationAsync(ex,cues,candidates,model,endpoint,ct);}
-    return result.Array("matches").Count==2?await VerifySavedProposalAsync(cues,candidates,result,model,endpoint,ct):result;
+    return result.Array("matches").Count>1?await VerifySavedProposalAsync(cues,candidates,result,model,endpoint,ct):result;
    }
    var first=await Verify(instruction);var second=await Verify(instruction+" Audit the original source independently again.");
    string Decision(JsonObject r)=>r.Text("assessment")+":"+r.Text("coverage")+":"+string.Join(",",r.Array("matches").Select(m=>m.Int("episode_id")));

@@ -27,7 +27,7 @@ public static class ClaimReview
                 var prior=row["claim_resolution"] as JsonObject;
                 var candidates=prior?["previous_candidates"] as JsonArray??row.Array("candidates");
                 var ids=candidates.Select(c=>c!["episode"].Int("id")).Distinct().ToList();
-                if(ids.Count is <1 or >2)throw new InvalidDataException("No valid disputed episode claims to audit.");
+                if(ids.Count is <1 or >EpisodeRange.Maximum)throw new InvalidDataException("No valid disputed episode claims to audit.");
                 var episodes=ids.Select(id=>catalog.Single(e=>e.Id==id)).ToList();
                 var signature=CollectionResolver.Hash(JsonSerializer.Serialize(new{Version,DialogueMatcher.RequestRevision,cues,episodes,model,endpoint,scope=matcher.CacheScope}));
                 if(prior?.Text("signature")!=signature) {

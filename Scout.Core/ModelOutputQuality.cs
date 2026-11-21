@@ -18,7 +18,7 @@ public static class ModelOutputQuality
     {
         ValidateText(result["summary"], "summary", 650);
         Fields("candidate_checks", "event_comparison", 450, 5);
-        Fields("matches", "reason", 450, 2);
+        Fields("matches", "reason", 450, EpisodeRange.Maximum);
         Fields("alternatives", "reason_against", 300, 2);
 
         void Fields(string array, string field, int maxLength, int maxItems)

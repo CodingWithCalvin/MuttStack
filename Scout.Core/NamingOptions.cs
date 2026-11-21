@@ -43,16 +43,16 @@ public sealed class NamingOptions
     public string FileName(string series, Episode episode,SeriesIdentity? identity=null) => PathTemplate!=null?NamingDsl.Render(PathTemplate,series,[episode],identity:identity).File:Words(Expand(FileTemplate, series, episode,identity),FileWordSeparator);
     public string AssignmentName(string series,IReadOnlyList<Episode> episodes,int part=0,int parts=0,SeriesIdentity? identity=null)=>AssignmentName(series,episodes,part,parts,identity,true);
     private string AssignmentName(string series,IReadOnlyList<Episode> episodes,int part,int parts,SeriesIdentity? identity,bool collapsePartTitles) {
-        if(episodes.Count is <1 or >2||episodes.Count==2&&(episodes[0].Season!=episodes[1].Season||episodes[1].Number!=episodes[0].Number+1)||parts!=0&&(parts!=2||part is <1 or >2||episodes.Count!=1))throw new ArgumentException("Invalid multipart naming assignment.");
+        if(!EpisodeRange.Valid(episodes)||parts!=0&&(parts!=2||part is <1 or >2||episodes.Count!=1))throw new ArgumentException("Invalid multipart naming assignment.");
         if(PathTemplate!=null)return NamingDsl.Render(PathTemplate,series,episodes,part,parts,identity,collapsePartTitles).File;
         var first=episodes[0] with {Title=string.Join(CombinedTitleSeparator,collapsePartTitles?NamingTitles.For(episodes):episodes.Select(e=>e.Title))};
-        var stem=Expand(FileTemplate,series,first,identity,episodes.Count==2?$"-E{episodes[1].Number:00}":"");
+        var stem=Expand(FileTemplate,series,first,identity,episodes.Count>1?$"-E{episodes[^1].Number:00}":"");
         return Words(parts>0?stem+$" (Part {part} of {parts})":stem,FileWordSeparator);
     }
     public static bool EquivalentName(string source,string basename)=>Normalize(Path.GetFileNameWithoutExtension(source))==Normalize(basename);
     public bool EquivalentAssignmentName(string source,string series,IReadOnlyList<Episode> episodes,int part=0,int parts=0,SeriesIdentity? identity=null) {
         if(EquivalentName(source,AssignmentName(series,episodes,part,parts,identity)))return true;
-        if(episodes.Count!=2)return false;
+        if(episodes.Count<2)return false;
         if(EquivalentName(source,AssignmentName(series,episodes,part,parts,identity,false)))return true;
         if(PathTemplate!=null) {
             // Correct original combined names remain correct regardless of the output template.
@@ -63,8 +63,8 @@ public sealed class NamingOptions
         }
         // Only the separator BETWEEN the two verified titles is optional. Never remove
         // "and" from within a title or accept different episode numbers/order.
-        var joined=episodes[0] with {Title=episodes[0].Title+" and "+episodes[1].Title};
-        return EquivalentName(source,Expand(FileTemplate,series,joined,identity,$"-E{episodes[1].Number:00}"));
+        var joined=episodes[0] with {Title=string.Join(" and ",episodes.Select(e=>e.Title))};
+        return EquivalentName(source,Expand(FileTemplate,series,joined,identity,$"-E{episodes[^1].Number:00}"));
     }
     public string Folder(string series, Episode episode,SeriesIdentity? identity=null) => PathTemplate!=null?NamingDsl.Render(PathTemplate,series,[episode],identity:identity).Folder:Words(Expand(SeasonTemplate, series, episode,identity),FolderWordSeparator);
     private static string Words(string value,string separator)=>PreviewPlanner.SafeName(Regex.Replace(value,@"\s+",separator));

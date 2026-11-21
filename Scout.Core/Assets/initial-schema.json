@@ -72,7 +72,7 @@
     },
     "matches": {
       "type": "array",
-      "maxItems": 2,
+      "maxItems": 4,
       "items": {
         "type": "object",
         "additionalProperties": false,

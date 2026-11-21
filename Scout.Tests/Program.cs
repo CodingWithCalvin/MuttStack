@@ -295,6 +295,7 @@ DiscoveryTests.Run(Test,temp);
 RetrievalTests.Run(Test);
 DescriptionTests.Run(Test,temp);
 SubtitleIntegrationTests.Run(Test,temp);
+TmdbMultipartTests.Run(Test,temp);
 SubtitleCoverageTests.Run(Test,temp);
 SubtitleNormalizationTests.Run(Test,temp);
 SubtitlePassReplayTests.Run(Test,temp);

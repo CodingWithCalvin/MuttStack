@@ -13,7 +13,8 @@
   "tools": [
     "tools/Scout.DatabaseCutover/Scout.DatabaseCutover.csproj",
     "tools/Scout.DatabaseRehearsal/Scout.DatabaseRehearsal.csproj",
-    "tools/Scout.HandoffRehearsal/Scout.HandoffRehearsal.csproj"
+    "tools/Scout.HandoffRehearsal/Scout.HandoffRehearsal.csproj",
+    "tools/Scout.TmdbRehearsal/Scout.TmdbRehearsal.csproj"
   ],
   "appId": "CodingWithCalvin.Scout",
   "icon": "Scout.Desktop/Assets/Scout.ico"

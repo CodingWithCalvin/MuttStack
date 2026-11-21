@@ -35,7 +35,7 @@ public static class CompactGrounding
             ["candidates"]=new JsonObject{["type"]="array",["minItems"]=count,["maxItems"]=count,["items"]=member.DeepClone()},
             ["kind"]=new JsonObject{["type"]="string",["enum"]=new JsonArray(kinds.Select(k=>(JsonNode?)JsonValue.Create(k)).ToArray())}});
         var variants=new JsonArray(Coverage(1,"single_episode","incomplete_episode"),Coverage(0,"unresolved"));
-        if(episodes.Count>=2)variants.Add(Coverage(2,"continuous_parts","separate_episodes"));
+        for(int count=2;count<=Math.Min(episodes.Count,EpisodeRange.Maximum);count++)variants.Add(Coverage(count,"continuous_parts","separate_episodes"));
         // Constrain the generated shape instead of repairing an inconsistent
         // recording decision after inference. Semantic and uniqueness checks remain.
         schema["properties"]!["recording"]=new JsonObject{["anyOf"]=variants};
@@ -105,8 +105,8 @@ public static class CompactGrounding
         }
         var recording=decision.DeepClone().AsObject();recording["reason"]=decision.Text("kind") switch {
             "single_episode"=>"The model identifies one complete catalog episode covering this recording.",
-            "continuous_parts"=>"The model identifies two complete catalog installments forming a continuous story.",
-            "separate_episodes"=>"The model identifies two separate complete episodes in playback order.",
+            "continuous_parts"=>"The model identifies complete consecutive catalog installments forming a continuous story.",
+            "separate_episodes"=>"The model identifies separate complete episodes in playback order.",
             "incomplete_episode"=>"The model identifies an incomplete recording of one catalog episode.",
             _=>"The model could not establish a complete recording assignment from the guide evidence."};
         var result=GroundedRecording.Expand(new JsonObject{["candidates"]=audits,["recording"]=recording},blocks,episodes);

@@ -58,6 +58,7 @@ internal static class Program
             void Pump() => window.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
             Pump();
             Console.WriteLine("PASS Scout window initializes and lays out with saved history.");
+            TmdbDesktopTests.Run(root);
             var media=Path.Combine(root,"selection-media");var seasonFolder=Path.Combine(media,"Season 02");
             Directory.CreateDirectory(seasonFolder);Directory.CreateDirectory(Path.Combine(media,"Season 03"));
             var first=Path.Combine(seasonFolder,"one.mkv");var second=Path.Combine(seasonFolder,"two.mkv");var third=Path.Combine(media,"Season 03","three.mkv");

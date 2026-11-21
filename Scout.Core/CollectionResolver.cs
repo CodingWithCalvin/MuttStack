@@ -31,7 +31,7 @@ public static class CollectionResolver
                 bool bad=!forced&&((candidates.Count>1||row["reasoning"].Text("coverage")=="combined")&&!combined||row["reasoning"].Text("coverage")=="partial"&&!MultipartEvidence.Partial(row)||Subtitles.SubtitleResult.IsSubtitle(row)&&!Subtitles.SubtitleResult.Valid(row,identity:report["series_identity"]?.Deserialize<SeriesIdentity>(Data.Options)));
                 invalid|=bad;
                 bool error=row.Bool("source_changed")||row.Text("relocation_error")!=""||row.Bool("move_pending")||!forced&&(!string.IsNullOrEmpty(row.Text("error"))&&!DialogueAvailability.Unavailable(row)||row.Bool("conflict_review_pending")||row.Text("conflict_review_error")!=""||row.Bool("claim_review_pending")||row.Text("claim_review_error")!="");blocked|=error;
-                var chosen=missing||staleOverride?[]:forced?new List<Episode>{Data.Episode(decision!["episode"]!)}:(bad||combined?candidates:candidates.Take(1)).Select(c=>Data.Episode(c!["episode"]!)).ToList();
+                var chosen=missing||staleOverride?[]:forced?HumanResolution.Episodes(decision!):(bad||combined?candidates:candidates.Take(1)).Select(c=>Data.Episode(c!["episode"]!)).ToList();
                 foreach(var e in chosen)claims[e.Id]=e;
                 votes.Add(chosen.Count>0&&!error?string.Join(",",chosen.Select(e=>e.Id))+(!forced&&MultipartEvidence.Partial(row)?":partial":":complete"):null);
             }
@@ -45,8 +45,8 @@ public static class CollectionResolver
         }
         DialogueCopies.Merge(groups);
         CompilationEvidence.Apply(groups);
-        var winners=groups.Where(g=>g.HumanDecision!=null&&g.Status=="suggested").GroupBy(g=>g.Episode!.Id)
-            .ToDictionary(g=>g.Key,g=>g.OrderByDescending(x=>HumanResolution.Order(report,x.HumanDecision!)).First());
+        var winners=groups.Where(g=>g.HumanDecision!=null&&g.Status=="suggested").SelectMany(g=>g.Episodes.Select(e=>(e.Id,Group:g))).GroupBy(x=>x.Id)
+            .ToDictionary(g=>g.Key,g=>g.OrderByDescending(x=>HumanResolution.Order(report,x.Group.HumanDecision!)).First().Group);
         foreach(var group in groups.Where(g=>g.Claims.Any(e=>winners.TryGetValue(e.Id,out var winner)&&winner!=g))) {
             group.Status="overridden_conflict";group.Episodes=[];
         }

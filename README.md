@@ -1,5 +1,7 @@
 # Scout
 
+[TMDB support, provider-aware paths and compatibility](docs/tmdb.md).
+
 A Windows desktop app for identifying TV episodes from video dialogue, reviewing the evidence, and organizing files into episode names and season folders.
 
 ## Features
@@ -87,7 +89,7 @@ In **Settings > Subtitles**, save a SubDL key and leave **Match subtitle dialogu
 
 Scout checks every eligible recording against subtitle references before starting AI. Supported matches are verified and saved during this first pass. Under each Scout's **Content and destination > Unresolved files**, **Use AI for unresolved files** is off by default. Unresolved recordings keep their saved dialogue for later; automatic AI conflict and partial-recording reviews also stay off. Enable the option and choose **Review issues** when ready to work on the remaining files without redoing successful matches. When enabled, a separate **AI fallback** pass starts after every eligible file has had its subtitle comparison. Progress identifies each pass and shows the remaining AI count. Resume retains successful matches, while Reanalyze deliberately checks the full selected set again using unchanged saved dialogue where possible. Local collection checks still run and hold conflicting assignments.
 
-Subtitle assignments retain the selected metadata provider's series/episode IDs, titles and numbering. Upload episode numbers alone cannot assign a provider episode: references require a verified series identity and unique title mapping, or distinctive dialogue linking them to titled references. Ordered Part 1/Part 2 references can support one provider episode; a complete combined reference can support two consecutive provider episodes. Partial recordings, promos and ambiguous mappings fall back to AI. Duplicate and collection-conflict checks still apply; competing recordings can trigger the existing automated AI review.
+Subtitle assignments retain the selected metadata provider's series/episode IDs, titles and numbering. Upload episode numbers alone cannot assign a provider episode: references require a verified series identity and unique title mapping, or distinctive dialogue linking them to titled references. Ordered multipart references can support one provider episode; a complete combined reference can support two to four consecutive provider episodes. Partial recordings, promos and ambiguous mappings fall back to AI. Duplicate and collection-conflict checks still apply; competing recordings can trigger the existing automated AI review.
 
 References and comparison results are cached in Scout's database, scoped to provider/series, guide, dialogue and matching revision. Completed reference retrieval is reused for seven days; saved references remain usable offline. Changes to the guide, dialogue or reference set invalidate exact-input comparisons. Match review labels subtitle evidence separately from AI assessments and shows reference provenance, provider mapping, text overlap and source dialogue. Overlap percentages are not confidence probabilities, and uploaded subtitle labels can still be wrong.
 

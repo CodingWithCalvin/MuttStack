@@ -17,7 +17,7 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
    "partial_unverified"=>"Partial episode — complementary recording not verified",
    _ when group.HumanDecision!=null&&group.Episode!=null=>"Human override — assignment forced by the user",
    _ when group.Episode!=null&&group.Rows.All(Subtitles.SubtitleResult.IsSubtitle)=>"Subtitle dialogue supports this provider assignment — suggestion",
-   _ when group.Combined=>"Combined episodes — dialogue supports two consecutive episodes",
+   _ when group.Combined=>"Combined episodes — consecutive episodes in one recording",
    _ when group.Split=>"Split episode — complementary parts independently verified",
    _ when group.Feature=>"Non-episode content suggested",
    _ when group.Episode!=null&&group.Rows.All(r=>r.Text("matching_method")=="reasoning"||r["reasoning"]!=null)=>"Dialogue supports this match — suggestion",

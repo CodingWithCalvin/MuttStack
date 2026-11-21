@@ -33,8 +33,8 @@ public static class GroundedVerification
         var ids=raw["checks"] is JsonArray checks
             ?checks.Where(c=>c.Text("verdict")=="supported").Select(c=>c.Int("episode_id")).ToList()
             :raw.Array("matches").Select(m=>catalog.SingleOrDefault(e=>e.Title==m.Text("episode_title"))?.Id??m.Int("episode_id")).ToList();
-        if(ids.Count is <1 or >2||ids.Distinct().Count()!=ids.Count||ids.Any(id=>catalog.Count(e=>e.Id==id)!=1))
-            throw new InvalidDataException("Grounded review requires one or two distinct proposed catalog entries.");
+        if(ids.Count is <1 or >EpisodeRange.Maximum||ids.Distinct().Count()!=ids.Count||ids.Any(id=>catalog.Count(e=>e.Id==id)!=1))
+            throw new InvalidDataException("Grounded review requires one to four distinct proposed catalog entries.");
         return ids.Select(id=>catalog.Single(e=>e.Id==id)).ToList();
     }
 
@@ -88,11 +88,13 @@ public static class GroundedVerification
         }
         if(accepted.Count==1&&unresolvedPart&&EpisodeCoverage.AreNumberedParts(episodes))throw AssignmentValidation.Reject(AssignmentIssue.UncertainStoryRole,"A related catalog part retains supporting but incomplete guide evidence. Whole-recording coverage is unresolved; no single-part assignment accepted.");
         if(accepted.Count==1&&EpisodeCoverage.IsCombinedScope(accepted[0].Scope))throw AssignmentValidation.Reject(AssignmentIssue.UncertainStoryRole,"Another catalog installment remains unidentified. No single-episode assignment accepted.");
-        if(accepted.Count==2&&accepted.Any(a=>a.Scope=="incomplete_episode"))throw AssignmentValidation.Reject(AssignmentIssue.IncompleteCombinedStory,"At least one catalog installment is recorded incompletely. A continuous story is allowed, but both episodes need complete coverage.");
-        if(accepted.Count==2&&(accepted.Any(a=>!EpisodeCoverage.IsCombinedScope(a.Scope))||accepted[0].Scope!=accepted[1].Scope))throw AssignmentValidation.Reject(AssignmentIssue.UncertainStoryRole,"Two guide matches do not consistently establish two complete catalog installments, either separate episodes or parts of one continuous story.");
-        if(accepted.Count==2) {
+        if(accepted.Count>1&&accepted.Any(a=>a.Scope=="incomplete_episode"))throw AssignmentValidation.Reject(AssignmentIssue.IncompleteCombinedStory,"At least one catalog installment is recorded incompletely. A continuous story is allowed, but every episode needs complete coverage.");
+        if(accepted.Count>1&&(accepted.Any(a=>!EpisodeCoverage.IsCombinedScope(a.Scope))||accepted.Select(a=>a.Scope).Distinct().Count()!=1))throw AssignmentValidation.Reject(AssignmentIssue.UncertainStoryRole,"Two guide matches do not consistently establish two complete catalog installments, either separate episodes or parts of one continuous story.");
+        if(accepted.Count>1) {
             var ordered=accepted.OrderBy(a=>a.First).ToList();
-            if(ordered[0].Last>=ordered[1].First) {
+            if(ordered.Count>2 && ordered.Zip(ordered.Skip(1)).Any(p=>p.First.Last>=p.Second.First))
+                throw AssignmentValidation.Reject(AssignmentIssue.OverlappingStories,"Each combined installment needs distinct ordered evidence.");
+            if(ordered.Count==2 && ordered[0].Last>=ordered[1].First) {
                 // Explicit consecutive parts can share their exact handoff block. Require
                 // two independent quoted blocks on EACH side; interleaving is still held.
                 // Keep the shared quotes in the full audit, but use exclusive quotes for
@@ -109,9 +111,9 @@ public static class GroundedVerification
                     checks.Single(c=>c.Int("episode_id")==episodes[item.Index].Id)!["supporting_blocks"]=new JsonArray(exclusive.Select(i=>(JsonNode?)JsonValue.Create(i)).ToArray());
                 }
             }
-            checks=new JsonArray(checks.OrderBy(c=>accepted.Single(a=>episodes[a.Index].Id==c.Int("episode_id")).First).Select(c=>c!.DeepClone()).ToArray());
+            checks=new JsonArray(checks.OrderBy(c=>accepted.FirstOrDefault(a=>episodes[a.Index].Id==c.Int("episode_id")).First).Select(c=>c!.DeepClone()).ToArray());
         }
-        var compact=new JsonObject{["assessment"]=accepted.Count>0?"supported":"uncertain",["coverage"]=accepted.Count==2?"combined":accepted.Count==0?"unknown":accepted[0].Scope=="incomplete_episode"?"partial":"complete",
+        var compact=new JsonObject{["assessment"]=accepted.Count>0?"supported":"uncertain",["coverage"]=accepted.Count>1?"combined":accepted.Count==0?"unknown":accepted[0].Scope=="incomplete_episode"?"partial":"complete",
             ["checks"]=checks,["note"]="Candidates were audited against their complete guide statements and exact original dialogue excerpts."};
         var result=CompactVerification.Expand(compact,blocks,episodes);DialogueMatcher.Validate(result,blocks,episodes,true,requireContentType:true);
         foreach(var check in result.Array("candidate_checks")) {
