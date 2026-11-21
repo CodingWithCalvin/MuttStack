@@ -15,5 +15,5 @@
     <Compile Include="../../src/Tucker/Tvdb.cs" Link="Tvdb.cs"/>
     <Compile Include="../../src/Tucker/FolderNames.cs" Link="FolderNames.cs"/>
   <Compile Include="../../src/Tucker/DiscLabelHints.cs" Link="DiscLabelHints.cs"/><Compile Include="../../src/Tucker/DoggoDatabase.cs" Link="DoggoDatabase.cs"/><Compile Include="../../src/Tucker/QueueManager.cs" Link="QueueManager.cs"/><Compile Include="../../src/Tucker/Naming.cs" Link="Naming.cs"/></ItemGroup>
-<ItemGroup><ProjectReference Include="../../src/Doggo.Handoffs/Doggo.Handoffs.csproj"/></ItemGroup></Project>
+<ItemGroup><ProjectReference Include="../../src/Doggo.Handoffs/Doggo.Handoffs.csproj"/></ItemGroup><ItemGroup><Compile Include="../../src/Tucker/MetadataSearch.cs" Link="MetadataSearch.cs"/></ItemGroup></Project>
 

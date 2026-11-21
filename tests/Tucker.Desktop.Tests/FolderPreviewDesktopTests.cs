@@ -21,9 +21,9 @@ static class FolderPreviewDesktopTests
         object? Call(string name,params object?[] args)=>typeof(MainWindow).GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(w,args);
         async Task Preview()=>await (Task)Call("PreparePreview")!;
         string PathText()=>C<TextBox>("FolderExamplePath").Text;
-        Handoff Offer(string label,string? series,string season,string volume,string disc){
+        Handoff Offer(string label,string? series,string season,string volume,string disc,string provider="tvdb"){
             var dir=Path.Combine(home,"raw",label);Directory.CreateDirectory(dir);var file=Path.Combine(dir,"title.mkv");File.WriteAllText(file,"raw");var f=new FileInfo(file);
-            var manifest=new HandoffManifest{Id=Guid.NewGuid().ToString("D"),Files=[new(){Source=file,SourceSize=f.Length,SourceModified=f.LastWriteTimeUtc,Series=series==null?null:new("tvdb","123",series,"2020",""),Season=season,VolumeNumber=volume,DiscNumber=disc,DiscLabel=label,DiscId=label,RipDate=new DateTime(2026,1,2)}]};
+            var manifest=new HandoffManifest{Id=Guid.NewGuid().ToString("D"),Files=[new(){Source=file,SourceSize=f.Length,SourceModified=f.LastWriteTimeUtc,Series=series==null?null:new(provider,"123",series,"2020",""),Season=season,VolumeNumber=volume,DiscNumber=disc,DiscLabel=label,DiscId=label,RipDate=new DateTime(2026,1,2)}]};
             var path=Path.Combine(home,manifest.Id+".json");QueueStore.Write(path,manifest);var h=Handoff.Read(path);db.Offer(h);return h;
         }
         void Use(params Handoff[] batches){Click("NavInbox");C<DataGrid>("InboxGrid").SelectedItems.Clear();foreach(var item in C<DataGrid>("InboxGrid").Items.Cast<InboxItem>().Where(i=>batches.Any(b=>b.Manifest.Id==i.Id)))C<DataGrid>("InboxGrid").SelectedItems.Add(item);Click("UseInboxBatches");}
@@ -31,6 +31,8 @@ static class FolderPreviewDesktopTests
         try{
             Click("NavSettings");
             Check(C<ComboBox>("FolderExampleSource").SelectedItem is FolderExample {IsExample:true}&&PathText()==Path.Combine(output,@"Example Show (2024)\Season 01")&&C<TextBlock>("FolderExampleNote").Text.StartsWith("Example values"),"Settings shows a clearly labeled full example folder before sources are selected");
+            C<TextBox>("OutputFormat").Text=@"{series} {{{provider}-{id}}}\Season {season:00}";
+            Check(PathText()==Path.Combine(output,@"Example Show {tmdb-123456}\Season 01"),"Provider-aware example defaults to TMDB");
             C<TextBox>("OutputFormat").Text=@"{series} {{tvdb-{tvdb_id}}}\Season {season:00}\Volume {volume_number:00}\Disc {disc_number:00}\{date:yyyyMMdd}";
             Check(PathText()==Path.Combine(output,@"Example Show {tvdb-123456}\Season 01\Volume 01\Disc 02\20240115"),"Folder example updates immediately for nested folders, padding, escaped braces and dates");
             C<TextBox>("Destination").Text=@"\\media-server\compressed";
@@ -43,10 +45,12 @@ static class FolderPreviewDesktopTests
             C<TextBox>("Destination").Text=output;C<TextBox>("OutputFormat").Text=@"{series} {{tvdb-{tvdb_id}}}\Season {season:00}\{disc_label}";
             Check(PathText().Length>0&&C<TextBlock>("FolderExampleError").Visibility==Visibility.Collapsed&&!Directory.Exists(output)&&db.Settings<Preferences>()==preferences&&w.Manager.State.Jobs.Count==0,"Live preview recovers on correction without creating folders, saving preferences or creating a run");
             if(renders!=null){Directory.CreateDirectory(renders);await Render(w,1080,740,Path.Combine(renders,"folder-settings-example-minimum.png"));}
-            var a=Offer("Alpha S2 V3 D4","Actual: Show","2","3","4");var b=Offer("Beta S5 V2 D1","Other Show","5","2","1");var missing=Offer("No metadata",null,"","","");
+            var a=Offer("Alpha S2 V3 D4","Actual: Show","2","3","4");var b=Offer("Beta S5 V2 D1","Other Show","5","2","1","tmdb");var missing=Offer("No metadata",null,"","","");
             Use(a,b,missing);Click("NavSettings");Choose(a);
             Check(C<ComboBox>("FolderExampleSource").Items.Count==3&&PathText()==Path.Combine(output,@"Actual_ Show {tvdb-123}\Season 02\Alpha S2 V3 D4")&&C<TextBlock>("FolderExampleMetadata").Text.Contains("Volume: 3"),"Staged inbox files supply real metadata and the same filename sanitization as compression");
-            Choose(b);Check(PathText()==Path.Combine(output,@"Other Show {tvdb-123}\Season 05\Beta S5 V2 D1"),"The source selector previews a different batch's exact folder");
+            Choose(b);Check(PathText()==""&&C<TextBlock>("FolderExampleError").Text.Contains("tvdb_id"),"A saved TVDB-only template cannot mislabel a real TMDB batch");
+            C<TextBox>("OutputFormat").Text=@"{series} {{{provider}-{id}}}\Season {season:00}\{disc_label}";
+            Check(PathText()==Path.Combine(output,@"Other Show {tmdb-123}\Season 05\Beta S5 V2 D1"),"The source selector uses the actual TMDB identity from its inbox batch");
             Choose(missing);Check(PathText()==""&&C<TextBlock>("FolderExampleError").Text.Contains("Missing value for {series}")&&C<ComboBox>("FolderExampleSource").SelectedItem is FolderExample {IsExample:false},"Incomplete real metadata produces an error without substituting example values");
             C<ListBox>("SourcesList").SelectedItem=C<ListBox>("SourcesList").Items.Cast<DraftSource>().Single(s=>s.Id==missing.Manifest.Id);Call("RemoveSources",w,new RoutedEventArgs());
             await Preview();var jobs=C<DataGrid>("PreviewGrid").Items.Cast<Job>().ToList();var chosen=jobs.Single(j=>j.Source==a.Manifest.Files[0].Source);C<DataGrid>("PreviewGrid").SelectedItem=chosen;Click("NavSettings");

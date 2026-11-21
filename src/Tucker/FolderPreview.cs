@@ -18,7 +18,7 @@ public partial class MainWindow
             :stagedBatches.SelectMany(b=>b.Manifest.Files).Select(f=>new FolderExample(f.Source,$"{f.DiscLabel} · {Path.GetFileName(f.Source)}",new(f.Series,f.Season,f.DiscLabel,f.RipDate,f.VolumeNumber,f.DiscNumber))).ToList();
         if(!draft)examples=SelectedJobs().Select(ExampleFor).ToList();
         examples=examples.DistinctBy(f=>f.Id,StringComparer.OrdinalIgnoreCase).ToList();
-        if(examples.Count==0)examples.Add(new("example","Example metadata",new(new("tvdb","123456","Example Show","2024",""),"1","Example Show S1 V1 D2",new DateTime(2024,1,15),"1","2"),true));
+        if(examples.Count==0)examples.Add(new("example","Example metadata",new(new("tmdb","123456","Example Show","2024",""),"1","Example Show S1 V1 D2",new DateTime(2024,1,15),"1","2"),true));
         var selectedId=(FolderExampleSource.SelectedItem as FolderExample)?.Id;
         var selectedFile=(draft?PreviewGrid.SelectedItem:QueueGrid.SelectedItem) as Job;
         var selected=preferSelected?examples.FirstOrDefault(f=>f.Id==selectedFile?.Source):null;
@@ -39,8 +39,11 @@ public partial class MainWindow
         if(FolderExampleSource.SelectedItem is not FolderExample sample)return;
         static string Value(string? value)=>string.IsNullOrWhiteSpace(value)?"—":value;
         var c=sample.Context;
+        // Illustrative values follow the token being demonstrated. Real metadata
+        // always retains its actual provider and cannot fill a different ID token.
+        if(sample.IsExample&&c.Series!=null)c=c with{Series=c.Series with{Provider=OutputFormat.Text.Contains("{tvdb_id}",StringComparison.OrdinalIgnoreCase)&&!OutputFormat.Text.Contains("{tmdb_id}",StringComparison.OrdinalIgnoreCase)?"tvdb":"tmdb"}};
         FolderExampleSource.ToolTip=sample.IsExample?"Illustrative metadata only":sample.Id;
-        FolderExampleMetadata.Text=$"Series: {Value(c.Series?.Name)} · Year: {Value(c.Series?.Year)} · TVDB: {Value(c.Series?.Provider=="tvdb"?c.Series.Id:null)}\nSeason: {Value(c.Season)} · Volume: {Value(c.Volume)} · Disc: {Value(c.DiscNumber)} · Date: {c.Date:yyyy-MM-dd}";
+        FolderExampleMetadata.Text=$"Series: {Value(c.Series?.Name)} · Year: {Value(c.Series?.Year)} · {Value(c.Series?.Provider?.ToUpperInvariant())}: {Value(c.Series?.Id)}\nSeason: {Value(c.Season)} · Volume: {Value(c.Volume)} · Disc: {Value(c.DiscNumber)} · Date: {c.Date:yyyy-MM-dd}";
         try{
             // Use the production formatter without filesystem checks while the user types.
             FolderExamplePath.Text=FolderNames.Resolve(Destination.Text.Trim(),OutputFormat.Text,c,checkLinks:false);

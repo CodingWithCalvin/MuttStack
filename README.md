@@ -1,5 +1,7 @@
 # Tucker
 
+[TMDB support, provider-aware paths and compatibility](docs/tmdb.md).
+
 Independent Windows WPF compression companion to Ripley and Scout. Amber/copper shell and a dachshund mascot with a copper flat cap and Tucker name tag.
 
 ## Run
@@ -26,11 +28,11 @@ Raw media is never overwritten, renamed, or deleted by Tucker. Output publicatio
 
 Tucker reads installed HandBrake GUI presets/settings without modifying them. Preview freezes every preset setting into an independently named preset; its JSON is also stored in Tucker's database. Queued jobs retain it after preference changes. NVDEC is decoding, not NVENC encoding. Tucker does not change encoder, speed, RF, filters, scaling or audio options for performance.
 
-Folder and filename formats support `{series}`, `{series_name}`, `{year}`, `{tvdb_id}`, `{season}`, `{volume_number}`, `{disc_number}`, `{disc_label}`, `{date}`, numeric padding such as `{season:00}`, and escaped `{{`/`}}`. Retired `disc`, `disc_desc` and `volume` aliases are rejected. Filename formats also support `{filename}` (the current prefixed source stem); the selected preset supplies the extension. The default `{filename}` retains existing names.
+Folder and filename formats support `{series}`, `{series_name}`, `{year}`, `{provider}`, `{id}`, `{series_id}`, `{tmdb_id}`, `{tvdb_id}`, `{season}`, `{volume_number}`, `{disc_number}`, `{disc_label}`, `{date}`, numeric padding such as `{season:00}`, and escaped `{{`/`}}`. Retired `disc`, `disc_desc` and `volume` aliases are rejected. Filename formats also support `{filename}` (the current prefixed source stem); the selected preset supplies the extension. The default `{filename}` retains existing names.
 
 **Folder preview** beneath the relative folder format shows the full resolved path as you edit the format or output base. It uses the same folder formatter as compression, including token padding, escaped braces and Windows filename cleanup. Choose a source from your previewed rips, staged inbox batches or selected saved run to see its own metadata; the selected preview file is preferred when opening Settings. With no available source metadata, it uses clearly labeled example values. Missing real metadata and invalid formats appear inline instead of substituting sample values. The sample is read-only: it creates no folders and changes no saved job settings. Preview the run again to apply updated preferences to new work and validate the actual destination.
 
-For example: `{series} {{tvdb-{tvdb_id}}}\Season {season:00}`. Existing Ripley prefixes are preserved. Metadata comes from each raw rip's saved manifest; older folders can supply explicit season/disc markers. Series details come from each fileÃ¢â‚¬â„¢s saved metadata or inbox handoff. When a required naming token has no value, preview identifies the source that needs metadata or a format without that token. No global series or disc values are applied across batches. TVDB search is not exposed in this first Tucker UI.
+For example: `{series} {{tvdb-{tvdb_id}}}\Season {season:00}`. Existing Ripley prefixes are preserved. Metadata comes from each raw rip's saved manifest; older folders can supply explicit season/disc markers. Series details come from each fileÃ¢â‚¬â„¢s saved metadata or inbox handoff. When a required naming token has no value, preview identifies the source that needs metadata or a format without that token. No global series or disc values are applied across batches. Series search is not exposed in Tucker; each source retains its own provider identity.
 
 ## Independent storage
 

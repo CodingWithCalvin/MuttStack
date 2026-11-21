@@ -8,8 +8,8 @@ namespace Tucker;
 public record FolderContext(SeriesIdentity? Series, string Season, string Disc, DateTime Date, string? Volume = null, string? DiscNumber = null);
 public static class FolderNames
 {
-    public const string DefaultRaw = "{series} ({year}) [tvdb-{tvdb_id}]\\{disc_label}";
-    public const string DefaultCompressed = "{series} ({year}) [tvdb-{tvdb_id}]";
+    public const string DefaultRaw = "{series} ({year}) {{{provider}-{id}}}\\{disc_label}";
+    public const string DefaultCompressed = "{series} ({year}) {{{provider}-{id}}}";
     public static string ExpandTokens(string template, FolderContext context, string kind = "folder")
     {
         return Regex.Replace(template, @"\{\{|\}\}|\{(?<name>[a-zA-Z_]+)(?::(?<format>[^{}]+))?\}|[{}]", m => {
@@ -19,6 +19,9 @@ public static class FolderNames
             string? value = token switch {
                 "series" or "series_name" => context.Series?.Name,
                 "year" => context.Series?.Year,
+                "provider" => context.Series?.Provider,
+                "id" or "series_id" => context.Series?.Id,
+                "tmdb_id" => context.Series?.Provider == "tmdb" ? context.Series.Id : null,
                 "tvdb_id" => context.Series?.Provider == "tvdb" ? context.Series.Id : null,
                 "disc_label" => context.Disc,
                 "season" => context.Season,

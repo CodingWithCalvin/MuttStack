@@ -10,9 +10,13 @@ static class DatabaseCredentialTests
   void Check(bool ok,string message){if(!ok)throw new Exception(message);passed++;Console.WriteLine("PASS "+message);}
   void Reject(Action action,string message){try{action();}catch(Exception e)when(e is IOException or InvalidDataException or CryptographicException or JsonException){Check(true,message);return;}throw new Exception(message);}
   _=new DoggoInbox(target);using(var sql=new Sqlite(target)){sql.Exec("INSERT INTO doggo_migrations VALUES('scout',1,'test')");sql.Exec("CREATE TABLE scout_documents(path TEXT PRIMARY KEY,kind TEXT,content BLOB)");}
-  void Key(string? value,string? pin=null){var keys=new Dictionary<string,string>();if(value!=null)keys["metadata|tvdb"]=value;if(pin!=null)keys["metadata|tvdb-pin"]=pin;var encrypted=Protect(JsonSerializer.SerializeToUtf8Bytes(keys));using var sql=new Sqlite(target);sql.Exec("INSERT OR REPLACE INTO scout_documents VALUES('authoritative','credentials.dpapi',X'"+Convert.ToHexString(encrypted)+"')");}
+  void Key(string? value,string? pin=null,string? tmdb=null){var keys=new Dictionary<string,string>();if(value!=null)keys["metadata|tvdb"]=value;if(pin!=null)keys["metadata|tvdb-pin"]=pin;if(tmdb!=null)keys["metadata|tmdb"]=tmdb;var encrypted=Protect(JsonSerializer.SerializeToUtf8Bytes(keys));using var sql=new Sqlite(target);sql.Exec("INSERT OR REPLACE INTO scout_documents VALUES('authoritative','credentials.dpapi',X'"+Convert.ToHexString(encrypted)+"')");}
   Key("shared-test-key","test-pin");var before=SHA256.HashData(File.ReadAllBytes(target));
   Check(ScoutCredentialReader.ReadTvdb(target)==("shared-test-key","test-pin")&&before.SequenceEqual(SHA256.HashData(File.ReadAllBytes(target))),"Credential lookup reads only the shared database without changing it");
+  Key("shared-test-key","test-pin","tmdb-test-token");before=SHA256.HashData(File.ReadAllBytes(target));
+  Check(ScoutCredentialReader.ReadTmdb(target)=="tmdb-test-token"&&before.SequenceEqual(SHA256.HashData(File.ReadAllBytes(target))),"TMDB token is read without altering the shared database");
+  Check(ScoutCredentialReader.Read(target,"tmdb").Pin==null&&ScoutCredentialReader.ReadTvdb(target).Pin=="test-pin","Provider credentials remain separate");
+  Key("shared-test-key","test-pin");Reject(()=>ScoutCredentialReader.ReadTmdb(target),"TMDB never falls back to a TVDB credential");
   File.WriteAllText(Path.Combine(root,"storage.json"),"invalid private Scout file");File.WriteAllText(Path.Combine(root,"credentials.dpapi"),"stale private credentials");
   Check(ScoutCredentialReader.ReadTvdb(target).Key=="shared-test-key","Private Scout configuration and credential files are never consulted");
   Reject(()=>ScoutCredentialReader.ReadTvdb(root),"A Scout settings directory cannot be used as a credential database");
