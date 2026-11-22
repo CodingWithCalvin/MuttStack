@@ -203,7 +203,7 @@ Pass `-DotnetPath C:\path\to\dotnet.exe` to use a particular SDK installation. T
 ./package.ps1
 ```
 
-Packaging produces a ZIP and SHA-256 file in `artifacts/releases`. Use `-SkipBuild` only after a successful build.
+Packaging produces a self-contained installer and `SHA256SUMS.txt` in a fresh `artifacts/packages/VERSION` directory. The root command delegates to `eng/package.ps1`; use `-Version` and `-OutputDirectory` to select a version and fresh output location. Run `eng/test.ps1` before packaging and `eng/test-installer.ps1` afterward.
 
 ### Repository layout and tests
 
@@ -274,4 +274,4 @@ Scout is licensed under the [MIT License](LICENSE).
 
 ## Installers and CI
 
-`eng/test.ps1` validates this repository independently. `eng/package.ps1` builds an unsigned Inno Setup installer and self-contained portable ZIP in a new output directory. `eng/test-installer.ps1` checks isolated installation, upgrades, locked-file refusal, the installed app UI and uninstall with data preservation. GitHub Actions runs these checks per repository and creates draft releases for version tags without requiring signing credentials. See [Windows installers and releases](docs/releases.md).
+`eng/test.ps1` validates this repository independently. `eng/package.ps1` builds an unsigned, self-contained Inno Setup installer in a new output directory. `eng/test-installer.ps1` checks isolated installation, upgrades, locked-file refusal, the installed app UI and uninstall with data preservation. GitHub Actions runs these checks per repository and creates draft releases for version tags without requiring signing credentials. See [Windows installers and releases](docs/releases.md).

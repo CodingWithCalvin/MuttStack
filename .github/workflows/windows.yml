@@ -46,7 +46,7 @@ jobs:
             $parts = $version.Split('.'); $parts[3] = $env:GITHUB_RUN_NUMBER; $version = $parts -join '.'
           }
           "value=$version" >> $env:GITHUB_OUTPUT
-      - name: Build self-contained installer and portable ZIP
+      - name: Build self-contained installer
         shell: pwsh
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.value }}
@@ -58,7 +58,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Scout-windows
-          path: artifacts/distribution/*
+          path: |
+            artifacts/distribution/*-setup.exe
+            artifacts/distribution/SHA256SUMS.txt
           if-no-files-found: error
           compression-level: 0
       - name: Upload validation diagnostics
@@ -99,5 +101,5 @@ jobs:
             if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Release package checksum mismatch.' }
           }
           $assets = Get-ChildItem artifacts/distribution -File | Select-Object -ExpandProperty FullName
-          gh release create $env:GITHUB_REF_NAME @assets --verify-tag --draft --generate-notes --notes "Unsigned Windows installer and portable ZIP. See docs/releases.md for installation details." --title "Scout $env:GITHUB_REF_NAME"
+          gh release create $env:GITHUB_REF_NAME @assets --verify-tag --draft --generate-notes --notes "Unsigned Windows installer. See docs/releases.md for installation details." --title "Scout $env:GITHUB_REF_NAME"
           if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed.' }
