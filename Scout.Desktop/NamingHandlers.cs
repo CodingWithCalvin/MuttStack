@@ -28,7 +28,7 @@ public partial class MainWindow
     {
         if(DefaultNamingExample==null||DefaultPathTemplate==null)return;
         string Example(NamingOptions options) {
-            try {options.Validate();var episode=new Episode(1,1,1,"Tori & Jade’s Playdate!");var identity=workspace?.SeriesIdentity??new SeriesIdentity("tvdb","12345","Example Show");return options.Folder(identity.Name,episode,identity)+"\\"+options.FileName(identity.Name,episode,identity)+".mkv\nCombined: "+options.AssignmentName(identity.Name,[episode,new Episode(2,1,2,"The Next Story")],identity:identity)+".mkv\nSplit: "+options.AssignmentName(identity.Name,[episode],1,2,identity)+".mkv";}
+            try {options.Validate();var episode=new Episode(1,1,1,"Tori & Jade’s Playdate!");var identity=workspace?.SeriesIdentity??new SeriesIdentity("tvdb","12345","Example Show","2024");return options.Folder(identity.Name,episode,identity)+"\\"+options.FileName(identity.Name,episode,identity)+".mkv\nCombined: "+options.AssignmentName(identity.Name,[episode,new Episode(2,1,2,"The Next Story")],identity:identity)+".mkv\nSplit: "+options.AssignmentName(identity.Name,[episode],1,2,identity)+".mkv";}
             catch(ArgumentException ex){return ex.Message;}
         }
         DefaultNamingExample.Text=Example(DefaultNaming());RefreshGlobalDestinationExample();

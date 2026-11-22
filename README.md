@@ -151,7 +151,7 @@ Settings uses one relative path template for folders and filename; Scout adds th
 Season {season:00}\{series.replaceWhitespace(".")}.{code}.{titles.remove(punctuation).replaceWhitespace(".").join(".and.")}{partSuffix.remove(punctuation).replaceWhitespace(".").prefix(".")}
 ~~~
 
-Tokens include series, code, title, titles, season/episode (optionally :00), provider, id, part, parts and partSuffix. Functions run left to right. Titles are a list: transformations before join apply to each title, and transformations afterward apply to the joined text.
+Tokens include series, year (the series release year), code, title, titles, season/episode (optionally :00), provider, id, part, parts and partSuffix. Functions run left to right. Titles are a list: transformations before join apply to each title, and transformations afterward apply to the joined text.
 
 - remove(punctuation), remove(symbols), remove(diacritics), remove(whitespace), remove(quotes) use defined character-category selectors.
 - remove("text") removes literal text only, even when it spells a selector name.

@@ -20,6 +20,14 @@ static class DestinationSettingsDesktopTests {
   var run=store.CreateRun(root);run.SeriesIdentity=new("tvdb","82493","iCarly","2007");run.Name="iCarly";store.Save(run);
   Set("workspace",run);Set("report",null);Set("reportPath",null);Set("catalogPath","");Set("outputPath",store.DirectoryFor(run));
   C<TextBox>("LibraryPath").Text=root;C<TextBox>("SeriesName").Text="iCarly";Call("RefreshHistory");
+  var previousTemplate=C<NamingTemplateEditor>("DefaultPathTemplate").Text;
+  Set("workspace",null);C<NamingTemplateEditor>("DefaultPathTemplate").Text=@"Season {season:00}\{series} ({year}) - {code} - {title}";
+  Check(C<TextBlock>("DefaultNamingExample").Text.Contains("Example Show (2024) - S01E01"),"Relative naming preview supplies an illustrative release year without a selected Scout");
+  Set("workspace",run);Call("NamingChanged",window,new RoutedEventArgs());
+  Check(C<TextBlock>("DefaultNamingExample").Text.Contains("iCarly (2007) - S01E01"),"Relative naming preview uses the selected show's release year");
+  var identity=run.SeriesIdentity;run.SeriesIdentity=identity with{Year=""};Call("NamingChanged",window,new RoutedEventArgs());
+  Check(C<TextBlock>("DefaultNamingExample").Text.Contains("release year")&&!C<TextBlock>("DefaultNamingExample").Text.Contains("2024"),"Missing real release years are reported instead of replaced with example metadata");
+  run.SeriesIdentity=identity;C<NamingTemplateEditor>("DefaultPathTemplate").Text=previousTemplate;
   C<NamingTemplateEditor>("DefaultDestinationTemplate").Text=@"E:\TV\{series} ({year}) {{{provider}-{id}}}";
   Check(Call("SelectedDestinationRoot")==null&&C<TextBlock>("DefaultDestinationExample").Text.Contains(@"E:\TV\iCarly (2007) {tvdb-82493}\Season 01\"),"Global template edits show complete sample paths before affecting saved destinations");
   Call("SaveSettingsCore");

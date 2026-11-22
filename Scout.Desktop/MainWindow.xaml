@@ -141,7 +141,7 @@
 <TextBlock Text="Season {season:00}\{series.replaceWhitespace(&quot;.&quot;)}.{code}.{title.remove(punctuation).replaceWhitespace(&quot;.&quot;)}" FontFamily="Consolas" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"/>
 <TextBlock Text="My Show · S01E01 · Opening Night!" Margin="0,8,0,4" Foreground="{StaticResource MutedBrush}"/>
 <TextBlock Text="Season 01\My.Show.S01E01.Opening.Night.mkv" FontFamily="Consolas" TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,12"/>
-<TextBlock Text="Tokens: {series}, {code}, {title}, {titles}, {season:00}, {episode:00}, {provider}, {id}, {part}, {parts}, {partSuffix}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"/>
+<TextBlock Text="Tokens: {series}, {year}, {code}, {title}, {titles}, {season:00}, {episode:00}, {provider}, {id}, {part}, {parts}, {partSuffix}" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"/>
 <TextBlock Text="Choose Standardize all names to apply formatting changes to already-correct filenames." TextWrapping="Wrap" Margin="0,8,0,0"/>
 <TextBlock Text="Your template output" FontWeight="SemiBold" Margin="0,12,0,0"/>
 <TextBlock x:Name="DefaultNamingExample" TextWrapping="Wrap" Foreground="{StaticResource AccentBrush}" Margin="0,12,0,20"/>
