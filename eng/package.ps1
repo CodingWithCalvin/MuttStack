@@ -28,13 +28,13 @@ try {
     }
     $commit=(& git rev-parse HEAD).Trim();$dirty=@(& git status --porcelain).Count -gt 0
     [ordered]@{app=$name;version=$Version;commit=$commit;workingTreeDirty=$dirty;packageFormat='inno-setup';databaseMigrationPerformed=$false} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $app 'build-info.json') -Encoding utf8
-    $zip=Join-Path $OutputDirectory "$name-$Version-win-x64.zip"
-    [IO.Compression.ZipFile]::CreateFromDirectory($app,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
     $compiler=& (Join-Path $PSScriptRoot 'get-inno.ps1')
     Invoke-InnoCompiler $compiler $app $Version $OutputDirectory
     $installer=Join-Path $OutputDirectory "$name-$Version-win-x64-setup.exe"
-    & (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishedApp $app -Installer $installer -PortableZip $zip
+    & (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishedApp $app -Installer $installer
     Write-PackageChecksums $OutputDirectory
-    [ordered]@{app=$name;version=$Version;directory=$OutputDirectory;publishedApp=$app;installer=$installer;portableZip=$zip;appId=$PackageConfig.appId;signing='unsigned';installed=$false} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $work 'result.json') -Encoding utf8
+    $downloads=@(Get-ChildItem -LiteralPath $OutputDirectory -File)
+    if($downloads.Count -ne 2 -or @($downloads | Where-Object { $_.Name -notin @([IO.Path]::GetFileName($installer),'SHA256SUMS.txt') }).Count){throw 'Distribution must contain only the installer and its checksum file.'}
+    [ordered]@{app=$name;version=$Version;directory=$OutputDirectory;publishedApp=$app;installer=$installer;appId=$PackageConfig.appId;signing='unsigned';installed=$false} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $work 'result.json') -Encoding utf8
     Write-Output "Packages: $OutputDirectory"
 }finally{Pop-Location}
