@@ -49,8 +49,6 @@ public partial class MainWindow {
         var destination=DestinationTemplate.Resolve(DestinationTemplate.ForRun(appSettings,workspace),SeriesName.Text,workspace.SeriesIdentity);
         if(destination==null)return null;
         if(PreviewPlanner.Within(outputPath,destination))throw new ArgumentException("The destination must be separate from internal Scout storage.");
-        if(PreviewPlanner.Same(destination,LibraryPath.Text)||PreviewPlanner.Within(destination,LibraryPath.Text)||PreviewPlanner.Within(LibraryPath.Text,destination))
-            throw new ArgumentException("Choose a destination outside the source folder, with neither folder inside the other, so later source scans contain only remaining files.");
         return destination;
     }
     private void RefreshRunDestinationExample() {

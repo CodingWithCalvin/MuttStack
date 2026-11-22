@@ -27,10 +27,12 @@ static class DestinationMoveTests {
    pipeline.RunAsync(new(s.Root,catalogPath,Path.GetDirectoryName(s.Report)!,"model","http://127.0.0.1:1234/v1/chat/completions",SelectedFiles:[item.Source],Restart:true,ContentOptions:new()),log,default).GetAwaiter().GetResult();
    Check(Data.Read(s.Report).Array("files")[0].Text("path")==item.Destination);
   });
-  test("Destination changes invalidate previews and nested destinations are rejected",()=>{
+  test("Destination changes invalidate previews; matching and nested roots are accepted",()=>{
    var s=Setup("destination-validation",Path.Combine(temp,"destination-validation-out"));var report=Data.Read(s.Report);
    Check(PreviewCache.Signature(report,s.Root,"Show",catalog,new(),null,s.Plan.DestinationRoot,new())!=PreviewCache.Signature(report,s.Root,"Show",catalog,new(),null,Path.Combine(temp,"different"),new()));
-   foreach(var target in new[]{Path.Combine(s.Root,"output"),temp,"relative-folder"}) {
+   foreach(var target in new[]{s.Root,Path.Combine(s.Root,"output"),temp})
+    Check(PreviewPlanner.Create(report,s.Root,"Show",catalog,destinationRoot:target).Items.Single().Action=="rename/move");
+   foreach(var target in new[]{"relative-folder"}) {
     bool rejected=false;try{PreviewPlanner.Create(report,s.Root,"Show",catalog,destinationRoot:target);}catch(ArgumentException){rejected=true;}Check(rejected);
    }
   });

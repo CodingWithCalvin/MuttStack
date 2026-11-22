@@ -28,6 +28,7 @@ static class TitleMapping {
  }
  public static ProviderLink? Find(string name,IReadOnlyList<Episode> episodes,string referenceId) {
   var file=Path.GetFileNameWithoutExtension(name);var code=Code.Match(file);var label=Label(name);
+  if(code.Success&&label==null)return null; // Malformed/nonconsecutive ranges are not whole-story labels.
   var text=code.Success?file[(code.Index+code.Length)..]:file;
   text=Regex.Split(text,@"(?i)\b(?:720p|1080p|2160p|480p|WEBRip|WEB-DL|HDTV|BluRay|DVDRip|x264|x265)\b")[0];
   text=Regex.Replace(text,@"(?i)(?:[._ -]+(?:en|eng|english|sdh|hi))+$","");
@@ -50,8 +51,12 @@ static class TitleMapping {
    return new(items,typo?"title-near-exact-and-provider-range":"unique-reference-title",part==0,[referenceId]);
   }
   if(items.Length>4||items.Select((e,i)=>SplitTitle(e.Title).Part==i+1&&e.Season==items[0].Season&&e.Number==items[0].Number+i).Any(ok=>!ok))return null;
-  if(part>0&&part<=items.Length)return new([items[part-1]],"unique-reference-title-and-explicit-part",true,[referenceId]);
+  if(part>0)return part<=items.Length?new([items[part-1]],"unique-reference-title-and-explicit-part",true,[referenceId]):null;
   if(label!=null&&RangeAgrees(items,label))return new(items,typo?"title-near-exact-and-provider-range":"unique-reference-title-and-complete-range",true,[referenceId]);
+  // Release catalogs can number a complete story as one episode while the
+  // selected provider splits it. Exact story titles establish identity; full
+  // dialogue extent is still required before this link can support a match.
+  if(!typo&&(label==null||label.First==label.Last))return new(items,"unique-whole-story-title",true,[referenceId]);
   return null;
  }
  static bool RangeAgrees(Episode[] items,SubtitleLabel label)=>label.Part==0&&items.Length==label.Last-label.First+1&&items.All(e=>e.Season==label.Season)&&items.Select(e=>e.Number).Order().SequenceEqual(Enumerable.Range(label.First,items.Length));

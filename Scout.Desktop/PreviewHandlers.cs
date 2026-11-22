@@ -13,6 +13,7 @@ public partial class MainWindow {
   ApplyMovesButton.Content=$"Move / rename selected ({selected})";
   ApplyMovesButton.IsEnabled=operation==null&&selected>0&&report!=null&&!MoveExecutor.HasPending(report);
   PreviewGrid.IsEnabled=operation==null;
+  RefreshDestinationChoices();
   SelectPendingMovesButton.IsEnabled=ClearMoveSelectionButton.IsEnabled=operation==null&&currentMovePlan!=null;
  }
  private void SelectPendingMoves(object sender,RoutedEventArgs e) {

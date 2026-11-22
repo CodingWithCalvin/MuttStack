@@ -205,6 +205,8 @@ internal static class Program
             DestinationSettingsDesktopTests.Run(window,store);
             DialogueAvailabilityDesktopTests.Run(window,store);
             SpeechSettingsDesktopTests.Run(window);
+            DestinationChoiceDesktopTests.Run(window,store);
+            DestinationPreviewDesktopTests.Run(window,store);
             window.Close();
             InboxDesktopTests.Run(root);
             app.Shutdown();

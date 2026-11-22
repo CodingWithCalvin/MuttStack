@@ -30,7 +30,7 @@ static class ReferenceMatcher {
    if(direct!=null&&direct.Key!=best.a.Link!.Key)return null;
    if(direct!=null)return direct;
    var link=best.a.Link!;
-   return link with {Method="dialogue-link-to-provider-titled-reference",Complete=link.Complete&&!partial,EvidenceReferences=[best.a.Reference.Id]};
+   return link with {Method="dialogue-link-to-provider-titled-reference",Complete=link.Complete&&!partial&&CompleteExtent(index,best.a.Reference.Index,common),EvidenceReferences=[best.a.Reference.Id]};
   }
   var mapped=references.Select(r=>r with {Link=r.MappingBlocked?null:Bridge(r.Reference.Index,r.Link,r.Label?.Part>0)}).ToArray();
   var result=mapped.Select(r=>new ReferenceCandidate(r.Reference.Id,[r],r.Reference.Index,r.Link)).ToList();
@@ -58,7 +58,7 @@ static class ReferenceMatcher {
   var best=ranking.FirstOrDefault();if(best==null)return new(false,false,"No reference dialogue available.",null,0,[]);
   bool Equivalent(CandidateScore other) {
    if(other.Candidate.Id==best.Candidate.Id)return true;
-   if(best.Candidate.Link!=null&&other.Candidate.Link?.Key==best.Candidate.Link.Key)return true;
+   if(best.Candidate.Link is {Complete:true}&&other.Candidate.Link is {Complete:true}&&other.Candidate.Link.Key==best.Candidate.Link.Key)return true;
    if(best.OrderedParts&&best.Candidate.Parts.Length>1&&other.Candidate.Parts.All(p=>best.Candidate.Parts.Any(b=>b.Reference.Id==p.Reference.Id)))return true;
    return best.Candidate.Index.Words.SequenceEqual(other.Candidate.Index.Words);
   }
@@ -68,14 +68,17 @@ static class ReferenceMatcher {
   string reason=!Strong(best.Overlap)?"No reference covers enough distinctive dialogue.":!best.OrderedParts?"All parts must cover substantial, separate, ordered portions; recaps/promos do not qualify.":!best.CompleteExtent?"Shared dialogue does not extend through both the recording and reference; possible partial recording.":margin<.15?"Competing dialogue references remain too close.":best.Candidate.Link==null?"Dialogue matches, but a unique provider title/ID mapping is missing or conflicting.":!best.Candidate.Link.Complete?"Only part of a provider episode is represented.":"Dialogue correspondence and a unique provider catalog mapping are supported.";
   return new(text,mapped,reason,best,margin,ranking.Take(8).ToArray());
  }
- static CandidateScore Score(TranscriptIndex source,ReferenceCandidate candidate,HashSet<string> common) {
-  var overall=TranscriptComparison.Compare(source,candidate.Index,common);
-  var sharedOverall=source.Phrases.Keys.Intersect(candidate.Index.Phrases.Keys).Where(p=>!common.Contains(p)).ToArray();
+ static bool CompleteExtent(TranscriptIndex source,TranscriptIndex reference,HashSet<string> common) {
+  var sharedOverall=source.Phrases.Keys.Intersect(reference.Phrases.Keys).Where(p=>!common.Contains(p)).ToArray();
   bool Extent(TranscriptIndex index) {
    var positions=sharedOverall.SelectMany(p=>index.Phrases[p]).Order().ToArray();if(positions.Length==0)return false;
    return positions[(int)(positions.Length*.1)]/(double)Math.Max(1,index.Words.Length)<=.25&&positions[Math.Min(positions.Length-1,(int)(positions.Length*.9))]/(double)Math.Max(1,index.Words.Length)>=.75;
   }
-  bool complete=Extent(source)&&Extent(candidate.Index);
+  return Extent(source)&&Extent(reference);
+ }
+ static CandidateScore Score(TranscriptIndex source,ReferenceCandidate candidate,HashSet<string> common) {
+  var overall=TranscriptComparison.Compare(source,candidate.Index,common);
+  bool complete=CompleteExtent(source,candidate.Index,common);
   if(candidate.Parts.Length==1)return new(candidate,overall,true,[],complete);
   var support=new List<PartSupport>();
   foreach(var part in candidate.Parts) {

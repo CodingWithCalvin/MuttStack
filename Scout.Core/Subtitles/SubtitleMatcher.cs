@@ -25,7 +25,7 @@ public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cache
    candidates=ReferenceMatcher.Candidates(refs,common,ct);ct.ThrowIfCancellationRequested();
    referenceHash=CollectionResolver.Hash(JsonSerializer.Serialize(loaded.References.OrderBy(r=>r.Id),Data.Options));note=loaded.Note;scope=current;
   }
-  var cacheKey=CollectionResolver.Hash(JsonSerializer.Serialize(new{SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,multipartRevision=3,current,referenceHash,cues},Data.Options));
+  var cacheKey=CollectionResolver.Hash(JsonSerializer.Serialize(new{SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,multipartRevision=4,current,referenceHash,cues},Data.Options));
   var path=Path.Combine(cacheRoot,"decisions",cacheKey+".json");
   if(ScoutStorage.Exists(path))try {
    var saved=Data.Read(path);var savedResult=saved["result"] as JsonObject;
@@ -59,6 +59,12 @@ public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cache
 }
 
 public static class SubtitleResult {
+ public static bool HasComparison(JsonObject row) {
+  try {
+   var proof=row["subtitle_match"];var cues=MultipartEvidence.Cues(row);
+   return proof.Text("version")==Version&&cues.Count>0&&proof.Text("dialogue_hash")==DialogueHash(cues)&&proof.Text("reason").Length>0;
+  }catch(Exception ex) when(ex is InvalidOperationException or JsonException or ArgumentException){return false;}
+ }
  public static string FallbackSummary(JsonObject details) {
   var reason=details.Text("reason","No supported subtitle assignment.");
   if(details["best"] is not JsonObject best||best["overlap"] is not JsonObject overlap)return reason;

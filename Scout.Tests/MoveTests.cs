@@ -129,6 +129,7 @@ static class MoveTests {
   });
   test("Selected dependencies move in order but unselected occupants and cycles remain untouched",()=>{
    var (root,path)=Setup("moves-dependency");var a=Row(root,Path.Combine("Season 01","Show - S01E02 - Ending.mkv"),one,"a");var b=Row(root,"b.mkv",two,"b");Save(path,a,b);var plan=Plan(path,root);
+   Assert(plan.Items.Single(i=>i.Source==b.Text("path")).DestinationConflict);
    MoveExecutor.ApplyAsync(path,plan,[b.Text("path")],catalog,silent,default).GetAwaiter().GetResult();
    Assert(File.Exists(b.Text("path"))&&File.ReadAllText(a.Text("path"))=="a");
    plan=Plan(path,root);MoveExecutor.ApplyAsync(path,plan,plan.Items.Where(i=>i.Action=="rename/move").Select(i=>i.Source).Reverse().ToArray(),catalog,silent,default).GetAwaiter().GetResult();

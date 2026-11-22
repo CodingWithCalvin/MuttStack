@@ -6,7 +6,13 @@ Scout requests English TMDB series and season details. A `{tvdb-...}` folder can
 
 One recording can cover one complete episode or two to four distinct, consecutive episodes from one season. Matching, independent model verification, collection resolution, manual assignment and naming all preserve the complete range. For example, three TMDB installments produce `S04E11-E13`; numbered titles of the same story collapse to one shared title. Every selected installment needs complete, ordered coverage. A disc play-all is still handled by the existing compilation checks. This does not split a recording into separate files, and ranges longer than four remain held.
 
-Subtitle upload numbers alone are not provider identities. References need a unique catalog title, distinctive dialogue linking to a verified reference, or a user-confirmed reference identity. For a strong full-length match with a single unnamed reference:
+Subtitle upload numbers alone are not provider identities. References need a unique catalog title, distinctive dialogue linking to a verified reference, or a user-confirmed reference identity.
+
+An exact whole-story title can map a single release episode to the selected catalog's consecutive numbered parts, even when the release uses another season or episode number. Scout still requires strong dialogue extending through both the recording and reference. Equivalent complete subtitle versions support the same assignment; a partial version cannot inherit complete coverage. Explicit part labels stay scoped to their part, and ambiguous titles or malformed ranges stay held.
+
+Move previews show duration and relative-size clues for possible combined recordings when at least five identified single episodes are available in the same folder. The comparison uses a median to reduce outlier effects. Duration takes priority; size alone is a weak clue because compression varies. Neither changes an assignment or proves how many episodes the selected provider lists. Unresolved subtitle comparisons show their actual matching or catalog-mapping reason, including when AI fallback is disabled.
+
+To review a strong full-length match with a single unnamed reference:
 
 1. Open **Force assignment** for the recording and select the full episode range with Ctrl/Shift.
 2. After checking its actual identity and full coverage, select **I verified the matched subtitle reference covers this full episode selection**. The checkbox is off by default and unavailable without sufficiently strong, complete subtitle evidence.

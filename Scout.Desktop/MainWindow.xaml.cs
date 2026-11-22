@@ -247,6 +247,7 @@ public partial class MainWindow : Window
         finally{operation?.Dispose();operation=null;SetBusy(false);}
     }
     private void PreviewSelected(object sender,SelectionChangedEventArgs e) {
+        RefreshDestinationChoices();
         if(PreviewGrid.SelectedItem is PreviewRow selected) { var item=selected.Item; PreviewDetails.Text=item.Source+"\n→ "+(item.Destination??"Leave in place")+"\n"+item.Change+": "+item.Reason+"\n"+string.Join(" ",item.BlockedReasons.Concat(item.Notes))+"\n"+item.FeatureDescription+"\n"+item.LastMoveError; }
     }
     private void OpenPreview(object sender,RoutedEventArgs e) {

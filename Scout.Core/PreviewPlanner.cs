@@ -8,7 +8,10 @@ namespace Scout.Core;
 public sealed class PlanItem
 {
     public required string Source {get;init;}
-    public string? Destination {get;init;}
+    public string? Destination {get;set;}
+    public string? CanonicalDestination {get;set;}
+    public bool DestinationConflict {get;set;}
+    public string DestinationChoice {get;set;}="";
     public required string Category {get;init;}
     public Episode? Episode {get;init;}
     public List<Episode> Episodes {get;init;}=[];
@@ -68,10 +71,10 @@ public static class PreviewPlanner
         if(string.IsNullOrWhiteSpace(series))throw new ArgumentException("Series name required.");
         if(!string.IsNullOrWhiteSpace(destinationRoot)&&!Path.IsPathFullyQualified(destinationRoot))throw new ArgumentException("Choose an absolute destination folder for this show.");
         var targetRoot=string.IsNullOrWhiteSpace(destinationRoot)?root:Path.TrimEndingDirectorySeparator(Path.GetFullPath(destinationRoot));
-        if(!Same(root,targetRoot)&&(Within(targetRoot,root)||Within(root,targetRoot)))throw new ArgumentException("Source and destination folders must not contain each other.");
         contentOptions??=ScoutContentOptions.Read(report);
         var items=new List<PlanItem>();
         var groups=CollectionResolver.Resolve(report);
+        var lengthHints=RecordingLengthHints.ForReport(report,groups);
         var seasonScope=Same(root,targetRoot)?SeasonFolderScope.Detect(root,series,naming,(catalog??[]).Concat(groups.SelectMany(g=>g.Claims)),identity):null;
         foreach(var group in groups) {
             var bonusExcluded=contentOptions is {IncludeBonusContent:false}&&(group.Feature||group.Episodes.Count>0&&group.Episodes.All(e=>e.Season==0));
@@ -119,7 +122,7 @@ public static class PreviewPlanner
                 }
                 if(e!=null&&!duplicate&&(group.Combined||group.Split)) {
                     if(item.Change is "Episode correction" or "Episode naming")item.Change=group.Combined?"Combined episode naming":"Split episode naming";
-                    item.Reason+=" "+(group.Combined?$"Dialogue verifies both {group.Code}: {group.Title}. Retain as one file.":$"Independent dialogue verification confirms {group.Code}, part {group.Part} of {group.PartCount}. Retain each part separately.");
+                    item.Reason+=" "+(group.Combined?$"Dialogue verifies {group.Code}: {group.Title}. Retain as one file.":$"Independent dialogue verification confirms {group.Code}, part {group.Part} of {group.PartCount}. Retain each part separately.");
                 }
                 if(!Within(source,root)&&!Within(source,targetRoot))item.BlockedReasons.Add("Source is outside the selected source and destination roots.");
                 if(scopeError!=null)item.BlockedReasons.Add(scopeError);
@@ -128,8 +131,9 @@ public static class PreviewPlanner
                 if(duplicate&&target is not null)item.Notes.Add(group.DialogueCopies?"Same complete normalized dialogue and compatible duration; video/audio encodings differ. Retain this copy separately.":row["primary_fingerprint"].Text("algorithm")=="full-file-sha256-v1"?"Exact byte-for-byte duplicate. Retain this copy separately.":"Identical primary video/audio. Retain this copy; other tracks and metadata can differ.");
                 if(group.HumanDecision!=null)item.Notes.Add("Episode assignment was forced by the user. Model evidence is retained; source and destination checks still apply.");
                 if(group.Duplicate)item.Notes.Add("Primary chosen by canonical path, filename agreement, then path order; not a quality ranking.");
-                if((row["duration"]?.GetValue<double>()??0)>2100&&group.Compilation==null&&!group.Combined&&!group.Split&&row["reasoning"].Text("method")!=DialogueMatcher.Version&&!Subtitles.SubtitleResult.Valid(row))item.Notes.Add("Legacy long-recording result: rerun dialogue matching to check for combined episodes.");
-                if(target is null){item.Reason=scopeError??(row.Text("error") is {Length:>0} error?error:$"Unresolved assignment ({group.Status}). Review the dialogue evidence.");item.Notes.Add("No move: leave in place.");
+                if(lengthHints.TryGetValue(row.Text("path"),out var lengthHint))item.Notes.Add(lengthHint);
+                if((row["duration"]?.GetValue<double>()??0)>2100&&group.Compilation==null&&!group.Combined&&!group.Split&&row["reasoning"].Text("method")!=DialogueMatcher.Version&&!Subtitles.SubtitleResult.HasComparison(row))item.Notes.Add("No current dialogue comparison is saved for this long recording. Reanalyze to check for combined episodes.");
+                if(target is null){item.Reason=scopeError??(row.Text("error") is {Length:>0} error?error:Subtitles.SubtitleResult.HasComparison(row)?Subtitles.SubtitleResult.FallbackSummary(row["subtitle_match"]!.AsObject()):$"Unresolved assignment ({group.Status}). Review the dialogue evidence.");item.Notes.Add("No move: leave in place.");
                     if(group.Compilation!=null){item.Change="Not included";item.Reason="Play-all compilation left in the source folder. Enable play-all compilations to move it separately.";}
                     else if(group.NotProcessed){item.Change="Not processed";item.Reason=DialogueAvailability.Message(row);}
                     else if(bonusExcluded){item.Change="Not included";item.Reason="Bonus content is disabled for this Scout. Leave it in the source folder for a later run.";}
@@ -146,20 +150,21 @@ public static class PreviewPlanner
                 if(item.BlockedReasons.Count>0)item.Action="hold";items.Add(item);
             }
         }
-        foreach(var collision in items.Where(i=>i.Destination!=null).GroupBy(i=>i.Destination!,StringComparer.OrdinalIgnoreCase).Where(g=>g.Count()>1))
-            foreach(var i in collision){i.BlockedReasons.Add("Multiple proposed files share this destination.");i.Action="hold";}
+        DestinationChoices.Apply(report,items,targetRoot);
+        foreach(var collision in items.Where(i=>i.Destination!=null&&i.DestinationChoice!="skip").GroupBy(i=>i.Destination!,StringComparer.OrdinalIgnoreCase).Where(g=>g.Count()>1))
+            foreach(var i in collision){i.BlockedReasons.Add("Multiple proposed files share this destination. Choose Keep both or Leave in place.");i.Action="hold";i.DestinationConflict=true;}
         var sources=items.ToDictionary(i=>i.Source,StringComparer.OrdinalIgnoreCase);
         foreach(var i in items.Where(i=>i.Action=="rename/move")) {
             if(!File.Exists(i.Destination)&&!Directory.Exists(i.Destination))continue;
-            if(sources.TryGetValue(i.Destination!,out var occupant)&&occupant.Action=="rename/move")i.Notes.Add("Destination occupied by another planned source: staged moves would be required.");
-            else{i.BlockedReasons.Add("Destination already exists and will not be vacated.");i.Action="hold";}
+            if(sources.TryGetValue(i.Destination!,out var occupant)&&occupant.Action=="rename/move") {i.DestinationConflict=true;i.Notes.Add("Destination currently belongs to another proposed source. Select its move too to vacate it first, or choose Keep both / Leave in place. Rename cycles remain held.");}
+            else{i.BlockedReasons.Add("Destination already exists. Choose Keep both to use another filename, or Leave in place.");i.Action="hold";i.DestinationConflict=true;}
         }
         bool changed;
         do {
             changed=false;
             foreach(var i in items.Where(i=>i.Action=="rename/move")) {
                 if(sources.TryGetValue(i.Destination!,out var other)&&other!=i&&other.Action!="rename/move") {
-                    i.BlockedReasons.Add("Destination occupied by a file that is not moving.");i.Action="hold";changed=true;
+                    i.BlockedReasons.Add("Destination occupied by a file that is not moving. Choose Keep both or Leave in place.");i.Action="hold";i.DestinationConflict=true;changed=true;
                 }
             }
         }while(changed);
