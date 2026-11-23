@@ -65,12 +65,12 @@ public sealed class WorkspaceStore(string root) {
   return Path.Combine(root,run.Id);
  }
  public void DeleteRun(RunWorkspace run) {
-  if(run.Status=="Running")throw new InvalidOperationException("Stop this run before deleting it.");
+  if(run.Status is "Running" or "Queued")throw new InvalidOperationException("Stop this run before deleting it.");
   var previous=run.Deleted;run.Deleted=true;try{Save(run);}catch{run.Deleted=previous;throw;}
  }
  public void RestoreRun(RunWorkspace run){var previous=run.Deleted;run.Deleted=false;try{Save(run);}catch{run.Deleted=previous;throw;}}
  public void ArchiveRun(RunWorkspace run,bool archived=true) {
-  if(run.Status=="Running")throw new InvalidOperationException("Pause this Scout before archiving it.");
+  if(run.Status is "Running" or "Queued")throw new InvalidOperationException("Pause this Scout before archiving it.");
   var previous=run.Archived;run.Archived=archived;try{Save(run);}catch{run.Archived=previous;throw;}
  }
  public string SaveCatalog(RunWorkspace run,string source) {
@@ -92,7 +92,7 @@ public sealed class WorkspaceStore(string root) {
   foreach(var path in ScoutStorage.List(root,"workspace.json")) {
    try {var run=JsonSerializer.Deserialize<RunWorkspace>(ScoutStorage.ReadText(path));
     if(run==null||Path.GetFullPath(Path.GetDirectoryName(path)!)!=Path.GetFullPath(DirectoryFor(run)))continue;
-    if(recoverInterrupted&&run.Status=="Running"){run.Status="Interrupted";run.Events.Add("Processing was interrupted. Use Resume Scout to reuse completed results and retry failed or unfinished files.");Save(run);}
+    if(recoverInterrupted&&run.Status is "Running" or "Queued"){run.Status="Interrupted";run.Events.Add("Processing was interrupted. Use Resume Scout to reuse completed results and retry failed or unfinished files.");Save(run);}
     if(string.IsNullOrWhiteSpace(run.Report)&&ScoutStorage.Exists(Path.Combine(DirectoryFor(run),"report.json")))run.Report=Path.Combine(DirectoryFor(run),"report.json");
     if(!run.Deleted&&(includeArchived||!run.Archived))result.Add(run);
    } catch(JsonException){} catch(IOException){} catch(InvalidDataException){}

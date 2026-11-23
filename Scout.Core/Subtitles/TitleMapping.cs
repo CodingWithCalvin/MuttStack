@@ -8,8 +8,12 @@ sealed record ProviderLink(Episode[] Episodes,string Method,bool Complete,string
 }
 static class TitleMapping {
  public static string Key(string value)=>Regex.Replace(value.ToLowerInvariant(),@"[^\p{L}\p{N}]","");
+ // Release titles sometimes change the first-person opening while retaining
+ // the distinctive story wording. Keep that wording exact (including names
+ // and negation), require a substantial remainder, and reject catalog ties.
+ static string PhraseKey(string key)=>Regex.Replace(key,@"^i(?:will|wantto)(?=.{8,}$)","i");
  static readonly Regex Code=new(@"(?i)(?:\bS(?<s>\d{1,2})[ ._-]*E(?<e>\d{1,3})(?:[ab])?(?:[- ]E?(?<end>\d{1,3})|(?<joined>(?:E\d{1,3})+))?|(?<!\d)(?<s>\d{1,2})x(?<e>\d{1,3})(?:-(?<end>\d{1,3}))?|(?<!\d)(?<s>\d{2})\.(?<e>\d{2})(?:-(?<end>\d{2}))?)(?!\d)");
- static readonly Regex PartSuffix=new(@"(?i)\s*(?:\((?:part\s*)?(?<n>\d+)\)|[-:. ]+part\s*(?<n>\d+)(?:\s+of\s+\d+)?)\s*$");
+ static readonly Regex PartSuffix=new(@"(?i)\s*(?:\((?:part\s*)?(?<n>\d+)\)|[-:., ]+part\s*(?<n>\d+)(?:\s+of\s+\d+)?)\s*$");
  public static (string Base,int Part) SplitTitle(string title) {
   var m=PartSuffix.Match(title);return m.Success?(Key(title[..m.Index]),int.Parse(m.Groups["n"].Value)):(Key(title),0);
  }
@@ -37,8 +41,12 @@ static class TitleMapping {
   var key=Key(text);var part=label?.Part>0?label.Part:parsedPart;
   var variants=new[]{text,unnumbered}.SelectMany(t=>new[]{Key(t),SplitTitle(t).Base,Key(Regex.Replace(t,@"(?i)[ ._-]*part[ ._-]*\d+(?:[ ._-]*of[ ._-]*\d+)?", ""))}).ToHashSet();
   var groups=episodes.GroupBy(e=>SplitTitle(e.Title).Base).ToArray();
-  var exact=groups.Where(g=>g.Key.Length>=4&&variants.Contains(g.Key)).ToArray();
-  bool typo=false;
+  var exact=groups.Where(g=>g.Key.Length>=2&&variants.Contains(g.Key)).ToArray();
+  bool phrasing=false,typo=false;
+  if(exact.Length==0) {
+   exact=groups.Where(g=>g.Key.Length>=4&&variants.Any(v=>v!=g.Key&&PhraseKey(v)==PhraseKey(g.Key))).ToArray();
+   phrasing=exact.Length>0;
+  }
   if(exact.Length==0&&label!=null) {
    // A single character typo is allowed only with a long title and an explicit
    // range that independently agrees with the provider's complete multipart group.
@@ -48,11 +56,15 @@ static class TitleMapping {
   var items=exact[0].OrderBy(e=>e.Season).ThenBy(e=>e.Number).ToArray();
   if(items.Length==1) {
    // A reference labelled Part 1 of an unsplit provider episode is partial.
-   return new(items,typo?"title-near-exact-and-provider-range":"unique-reference-title",part==0,[referenceId]);
+   return new(items,typo?"title-near-exact-and-provider-range":phrasing?"unique-reference-title-phrase-variant":"unique-reference-title",part==0,[referenceId]);
   }
-  if(items.Length>4||items.Select((e,i)=>SplitTitle(e.Title).Part==i+1&&e.Season==items[0].Season&&e.Number==items[0].Number+i).Any(ok=>!ok))return null;
+  if(items.Length>4||items.Select((e,i)=>(SplitTitle(e.Title).Part==i+1||i==0&&SplitTitle(e.Title).Part==0)&&e.Season==items[0].Season&&e.Number==items[0].Number+i).Any(ok=>!ok))return null;
   if(part>0)return part<=items.Length?new([items[part-1]],"unique-reference-title-and-explicit-part",true,[referenceId]):null;
   if(label!=null&&RangeAgrees(items,label))return new(items,typo?"title-near-exact-and-provider-range":"unique-reference-title-and-complete-range",true,[referenceId]);
+  // If the provider calls its first installment by the bare story title,
+  // that title alone could describe only the first half. Require an explicit
+  // complete range (above), or an explicitly labelled individual part.
+  if(SplitTitle(items[0].Title).Part==0)return null;
   // Release catalogs can number a complete story as one episode while the
   // selected provider splits it. Exact story titles establish identity; full
   // dialogue extent is still required before this link can support a match.

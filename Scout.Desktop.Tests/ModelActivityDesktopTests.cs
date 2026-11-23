@@ -26,15 +26,23 @@ static class ModelActivityDesktopTests
             var progress = (IProgress<ModelActivity>)Call("BeginModelActivity")!;
             progress.Report(new(3, "Verifying guide evidence · pass 1/2", "[2/10] Example Show - Season 01 - Episode 02.mkv", "Waiting for model response", TimeSpan.Zero)); Pump();
             Check(C<Border>("ModelActivityPanel").Visibility == Visibility.Visible && C<TextBlock>("ModelActivityHeading").Text.Contains("Verifying guide evidence") && C<TextBlock>("ModelActivitySource").Text.Contains("[2/10]"), "Model activity identifies the current file, request, and verification stage");
-            var history = JsonSerializer.Serialize(store.ReadAll(includeArchived: true)); var log = C<TextBox>("ActivityLog").Text;
+            var history = JsonSerializer.Serialize(store.ReadAll(includeArchived: true)); var log = C<ActivityLogView>("ActivityLog").Text;
             progress.Report(new(3, "Verifying guide evidence · pass 1/2", "[2/10] Example Show - Season 01 - Episode 02.mkv", "Reading model input · 12,288 tokens processed", TimeSpan.FromSeconds(65), true)); Pump();
-            Check(C<TextBlock>("ModelActivityDetail").Text.Contains("65s elapsed") && C<TextBlock>("Status").Text.Contains("Reading model input") && C<TextBox>("ActivityLog").Text == log && JsonSerializer.Serialize(store.ReadAll(includeArchived: true)) == history, "Live model counters update without filling saved history or the activity log");
+            Check(C<TextBlock>("ModelActivityDetail").Text.Contains("65s elapsed") && C<TextBlock>("Status").Text.Contains("Reading model input") && C<ActivityLogView>("ActivityLog").Text == log && JsonSerializer.Serialize(store.ReadAll(includeArchived: true)) == history, "Live model counters update without filling saved history or the activity log");
             if (Environment.GetEnvironmentVariable("SCOUT_TEST_RENDERS") is string render) {
+                var activityLog = C<ActivityLogView>("ActivityLog");
+                activityLog.Text = "Reading dialogue [1/3] Example-S01E01.mkv\n" +
+                    "Match found: Example-S01E01.mkv → S01E01 — Opening Night (subtitles; collection checks pending).\n" +
+                    "Subtitle match unresolved: no reference passed the dialogue comparison.\n" +
+                    "10:15  Saved match: Example-S01E02.mkv → S01E02 — The Long Journey Home (AI; collection checks pending).\n" +
+                    "Held for review: Example-S01E03.mkv — competing episode claims.\n" +
+                    "10:16  Matched: Example-S01E01.mkv → S01E01 — Opening Night (collection checks complete).";
                 Directory.CreateDirectory(render); var root = (FrameworkElement)window.Content;
                 if (root is Panel panel) panel.Background = window.Background;
                 root.Measure(new Size(1080, 740)); root.Arrange(new Rect(0, 0, 1080, 740)); root.UpdateLayout();
                 var image = new RenderTargetBitmap(1080, 740, 96, 96, PixelFormats.Pbgra32); image.Render(root);
                 var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image)); using var file = File.Create(Path.Combine(render, "scout-model-activity.png")); encoder.Save(file);
+                activityLog.Text = log;
             }
             var pause = new ScoutPause(); pause.Request(); Set("pauseRequest", pause); C<TextBlock>("Status").Text = "Pause requested";
             progress.Report(new(3, "Verifying guide evidence", "file.mkv", "Generating response · 8 tokens generated", TimeSpan.FromSeconds(70), true)); Pump();

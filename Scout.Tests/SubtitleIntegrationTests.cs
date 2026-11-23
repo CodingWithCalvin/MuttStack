@@ -142,12 +142,12 @@ static class SubtitleIntegrationTests {
     using var zipBytes=new MemoryStream();using(var zip=new ZipArchive(zipBytes,ZipArchiveMode.Create,true))using(var writer=new StreamWriter(zip.CreateEntry("Example.S03E12.Silver.Comet.srt").Open()))writer.Write(string.Join("\n\n",first.Select((c,i)=>$"{i+1}\n{TimeSpan.FromSeconds(c.Start):hh\\:mm\\:ss},000 --> {TimeSpan.FromSeconds(c.Start+2):hh\\:mm\\:ss},000\n{c.Text}")));
     HttpMessageHandler Api()=>new Response(r=>{requests++;var url=r.RequestUri!;if(url.Host=="dl.subdl.com")return new(HttpStatusCode.OK){Content=new ByteArrayContent(zipBytes.ToArray())};return Json(url.AbsolutePath.EndsWith("movies/search")?"""{"results":[{"sd_id":"sd123","imdb_id":"tt999","type":"tv"}]}""":"""{"subtitles":[{"lang":"english","url":"/subtitle/example.zip","unpack_files":["Example.S03E12.Silver.Comet.srt"]}]}""");});
     HttpMessageHandler Metadata()=>new Response(r=>Json("""{"id":4,"externals":{"thetvdb":123,"imdb":"tt999"}}"""));
-    var loaded=new SubdlReferences(cache,"fake-subtitle-key",apiHandler:Api,metadataHandler:Metadata).LoadAsync(series,catalog,new Progress(),default).GetAwaiter().GetResult();Assert(loaded.References.Count==1&&requests==3);
+    var loaded=new SubdlReferences(cache,"fake-subtitle-key",apiHandler:Api,metadataHandler:Metadata).LoadAsync(series,catalog,new Progress(),default).GetAwaiter().GetResult();Assert(loaded.References.Count==1&&requests==4);
     var reused=new SubdlReferences(cache,null,apiHandler:()=>throw new Exception("No network expected")).LoadAsync(series,catalog,new Progress(),default).GetAwaiter().GetResult();Assert(reused.References.Count==1&&!Directory.Exists(cache));
     var documents=ScoutStorage.List(cache,"manifest.json").ToList();Assert(documents.Count==1);
     documents.AddRange(Data.Read(documents[0]).Array("references").Select(id=>Path.Combine(Path.GetDirectoryName(documents[0])!,"references",id!.GetValue<string>()+".json")));
     Assert(documents.All(p=>!ScoutStorage.ReadText(p).Contains("fake-subtitle-key")));
-    var wrong=new SubdlReferences(Path.Combine(cache,"wrong"),"fake-key",apiHandler:Api,metadataHandler:()=>new Response(_=>Json("""{"id":4,"externals":{"thetvdb":456,"imdb":"tt999"}}"""))).LoadAsync(series,catalog,new Progress(),default).GetAwaiter().GetResult();Assert(wrong.References.Count==0&&requests==3);
+    var wrong=new SubdlReferences(Path.Combine(cache,"wrong"),"fake-key",apiHandler:Api,metadataHandler:()=>new Response(_=>Json("""{"id":4,"externals":{"thetvdb":456,"imdb":"tt999"}}"""))).LoadAsync(series,catalog,new Progress(),default).GetAwaiter().GetResult();Assert(wrong.References.Count==0&&requests==4);
    }finally{ScoutStorage.Unregister(cache);}
   });
  }

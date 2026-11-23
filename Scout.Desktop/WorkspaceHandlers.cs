@@ -35,17 +35,18 @@ public partial class MainWindow {
   workspaces.Save(workspace);
  }
  private void NewWorkspace(object? sender,RoutedEventArgs? e) {
-  if(operation!=null)return;
+  if(!CanSwitchScout)return;
   try {
    if(PickFolder("Choose the source video folder for this Scout") is not string folder)return;
    CreateRun(folder);
   }catch(Exception ex){Error(ex);}
  }
  private void CreateRun(string folder) {
+  if(!CanSwitchScout)return;
   PersistSetup();SaveDraft();
   var inherited=workspace!=null&&string.Equals(Path.GetFullPath(workspace.Library),Path.GetFullPath(folder),StringComparison.OrdinalIgnoreCase)?workspace.RestoreSetup() with {}:null;
   var sample=inherited!=null?workspace!.DiscoveryFiles.ToList():new List<string>();
-  var created=workspaces.CreateRun(folder);created.Setup=inherited??new ScoutSetup{MetadataProvider=appSettings.MetadataProvider};created.SeriesIdentity=null;created.DiscoveryFiles=[];workspaces.Save(created);workspace=created;
+  var created=workspaces.CreateRun(folder);created.Setup=inherited??new ScoutSetup{MetadataProvider=appSettings.MetadataProvider};created.SeriesIdentity=null;created.DiscoveryFiles=[];workspaces.Save(created);operation=null;pauseRequest=null;forceStopRequested=false;ClearModelActivity();workspace=created;
   report=null;reportPath=null;previewHtml=null;groups=[];
   SeriesName.Text="";LibraryPath.Text=workspace.Library;LibraryPath.IsReadOnly=true;catalogPath="";dialoguePath="";
   outputPath=workspaces.DirectoryFor(workspace);
@@ -53,7 +54,7 @@ public partial class MainWindow {
   FileCount.Text=EpisodeCount.Text=DuplicateCount.Text=ReviewCount.Text="—";
   PreviewSummary.Text="Generate a preview from this Scout's results.";PreviewDetails.Clear();
   SessionLog.Text="";RecordEvent("New Scout created for "+workspace.Library);
-  RefreshHistory();ShowPage("Library");
+  AttachSelectedWorker();RefreshHistory();ShowPage("Library");
  }
  private bool EnsureDraftScout() {
   if(workspace!=null&&workspace.Status=="Draft"&&report==null)return true;
@@ -62,22 +63,26 @@ public partial class MainWindow {
  }
  private void OpenWorkspace(object sender,SelectionChangedEventArgs e) {
   if(openingWorkspace||HistoryList.SelectedItem is not RunWorkspace chosen)return;
-  if(operation!=null){Status.Text="Wait for this Scout to stop before switching.";return;}
+  if(!CanSwitchScout){Status.Text="Wait for the current operation to finish before switching.";return;}
   OpenSavedRun(chosen);
  }
  private void OpenSavedRun(RunWorkspace chosen) {
+  if(!CanSwitchScout&&workspace?.Id!=chosen.Id)return;
+  var foreground=CanSwitchScout?null:operation;
   try {
-   SaveDraft();workspace=chosen;openingWorkspace=true;
+   SaveDraft();chosen=activeScouts.GetValueOrDefault(chosen.Id)?.Run??chosen;workspace=chosen;openingWorkspace=true;
+   operation=null;pauseRequest=null;forceStopRequested=false;
    report=null;reportPath=null;previewHtml=null;groups=[];ResultsGrid.ItemsSource=null;PreviewGrid.ItemsSource=null;ClearEvidence();
    PreviewSummary.Text="Generate a preview from these results.";PreviewDetails.Clear();
    FileCount.Text=EpisodeCount.Text=DuplicateCount.Text=ReviewCount.Text="—";
-   if(ScoutStorage.Exists(chosen.Report))LoadReport(chosen.Report);
+   if(!activeScouts.ContainsKey(chosen.Id)&&ScoutStorage.Exists(chosen.Report))LoadReport(chosen.Report);
    SeriesName.Text=chosen.Name;LibraryPath.Text=chosen.Library;catalogPath=chosen.Catalog;dialoguePath=chosen.Dialogue;
    outputPath=workspaces.DirectoryFor(chosen);
-   RestorePreview();
-   SessionLog.Text=string.Join("\n\n",chosen.Events);ActivityLog.Text=string.Join("\n",chosen.Events);
+   if(!activeScouts.ContainsKey(chosen.Id))RestorePreview();
+   if(foreground==null)AttachSelectedWorker();else{operation=foreground;SetBusy(true);}
+   SessionLog.Text=string.Join("\n\n",chosen.Events);ActivityLog.Text=chosen.Events.Count==0?"":string.Join("\n",chosen.Events)+"\n";
    WorkspaceHeading.Text=chosen.Name;WorkspaceSource.Text=chosen.Library;ShowPage("Session");
-  }catch(Exception ex){Error(ex);}finally{openingWorkspace=false;RefreshHistory();}
+  }catch(Exception ex){Error(ex);}finally{openingWorkspace=false;if(foreground!=null){operation=foreground;SetBusy(true);}else AttachSelectedWorker();RefreshHistory();}
  }
  private RunWorkspace? deletedRun;
  private void HistoryFilterChanged(object sender,RoutedEventArgs e)=>RefreshHistory();
@@ -95,7 +100,7 @@ public partial class MainWindow {
  private void HistoryMenuOpened(object sender,RoutedEventArgs e) {
   if(sender is not ContextMenu menu||menu.DataContext is not RunWorkspace run)return;
   var archive=(MenuItem)menu.Items[0];archive.Header=run.Archived?"Restore from archive":"Archive";
-  foreach(MenuItem item in menu.Items)item.IsEnabled=operation==null&&run.Status!="Running";
+  foreach(MenuItem item in menu.Items)item.IsEnabled=operation==null&&run.Status is not ("Running" or "Queued");
  }
  private void ArchiveHistoryScout(object sender,RoutedEventArgs e) {
   if(operation!=null||(sender as MenuItem)?.DataContext is not RunWorkspace chosen)return;
@@ -108,7 +113,7 @@ public partial class MainWindow {
  private void DeleteHistoryScout(object sender,RoutedEventArgs e) {if((sender as MenuItem)?.DataContext is RunWorkspace chosen)DeleteHistory(workspace?.Id==chosen.Id?workspace:chosen);}
  private void DeleteRun(object sender,RoutedEventArgs e) {if(workspace!=null)DeleteHistory(workspace);}
  private void DeleteHistory(RunWorkspace run) {
-  if(operation!=null||run.Status=="Running")return;
+  if(operation!=null||run.Status is "Running" or "Queued")return;
   if(MessageBox.Show(this,$"Delete {run.Name} from history?\n\nYou can undo this deletion. Saved data is retained for recovery; source videos are never changed.","Delete Scout",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)!=MessageBoxResult.Yes)return;
   try {
    workspaces.DeleteRun(run);deletedRun=run;RemoveFromView(run);

@@ -28,14 +28,14 @@ public partial class MainWindow {
   Show();Activate();
   if(string.IsNullOrEmpty(id))return;
   if(id.Length!=32||!id.All(Uri.IsHexDigit)){Status.Text="Invalid Scout shortcut.";return;}
-  if(operation!=null) {pendingTaskbarScout=id;Status.Text="Scout will open after the current activity finishes or pauses.";return;}
+  if(!CanSwitchScout) {pendingTaskbarScout=id;Status.Text="Scout will open after the current activity finishes or pauses.";return;}
   var chosen=workspaces.ReadAll().FirstOrDefault(s=>s.Id.Equals(id,StringComparison.OrdinalIgnoreCase));
   if(chosen==null){Status.Text="This Scout is no longer in history.";RefreshHistory();return;}
   OpenSavedRun(chosen);
   if(report!=null)ShowPage("Results");
  }
  private void OpenPendingTaskbarScout() {
-  if(operation!=null||pendingTaskbarScout==null)return;
+  if(!CanSwitchScout||pendingTaskbarScout==null)return;
   var id=pendingTaskbarScout;pendingTaskbarScout=null;
   Dispatcher.BeginInvoke(new Action(()=>OpenTaskbarScout(id)));
  }

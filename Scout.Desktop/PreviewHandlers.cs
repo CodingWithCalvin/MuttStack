@@ -29,6 +29,8 @@ public partial class MainWindow {
   var selected=((PreviewGrid.ItemsSource as IEnumerable<PreviewRow>)??[]).Where(r=>r.Selected&&r.CanApply).Select(r=>r.Item.Source).ToArray();
   if(selected.Length==0)return;
   var savedReport=reportPath;var plan=currentMovePlan;
+  try {runCoordinator.CheckPaths(plan.Items.Where(i=>selected.Contains(i.Source)).SelectMany(i=>new[]{i.Source,i.Destination}).OfType<string>());}
+  catch(Exception ex){Error(ex);return;}
   try {
    operation=new();SetBusy(true);ProcessingActionText.Text="Stop after current move";
    if(PreviewCache.Read(Path.Combine(outputPath,"move-preview"),CurrentPreviewSignature())==null)

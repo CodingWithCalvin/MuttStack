@@ -102,6 +102,19 @@ static class SpeechTests {
             pipeline.RunAsync(settings with{Reanalyze=true},log,default).GetAwaiter().GetResult();Check(speech.Calls==2);
             embedded=true;File.AppendAllText(path," with subtitles");pipeline.RunAsync(settings with{Reanalyze=true},log,default).GetAwaiter().GetResult();Check(speech.Calls==2&&Data.Read(reportPath).Array("files").Single()!["transcription"]==null);
         });
+        test("Speech completes for every recording before AI starts even without subtitle matching",()=>{
+            var root=Path.Combine(temp,"speech-before-ai");Directory.CreateDirectory(root);
+            foreach(var name in new[]{"one.mkv","two.mkv"})File.WriteAllText(Path.Combine(root,name),"synthetic fixture");
+            var output=Path.Combine(temp,"speech-before-ai-output");var guide=Path.Combine(output,"catalog.json");
+            Data.Save(guide,new{episodes=new[]{new Episode(1,1,1,"Silver Comet","The crew follows the silver comet.")}});
+            var cues=Enumerable.Range(0,150).Select(i=>new Cue(i*5,$"Silver comet captain topic{i} question{i} answer{i} outcome{i}")).ToList();
+            var speech=new Speech(cues);using var http=new HttpClient(new NoNetwork());using var stop=new CancellationTokenSource();int callsAtAi=0;
+            var matcher=new DialogueMatcher(http,beforeRequest:ct=>{callsAtAi=speech.Calls;stop.Cancel();ct.ThrowIfCancellationRequested();return Task.CompletedTask;});
+            var pipeline=new MediaPipeline(matcher,(_,args,_)=>Task.FromResult(args.Contains("streamhash")?"0,v,SHA256="+new string('a',64):"""{"format":{"duration":"900"},"streams":[{"codec_type":"audio","index":0}]}"""),speech:speech);
+            var settings=new MatchSettings(root,guide,output,"fixture","http://127.0.0.1:1234/v1/chat/completions",ContentOptions:null,UseAiFallback:true);
+            try{pipeline.RunAsync(settings,new Progress(),stop.Token).GetAwaiter().GetResult();}catch(OperationCanceledException){}
+            Check(callsAtAi==2&&speech.Calls==2,"AI must not retain the model worker before all speech is ready.");
+        });
         test("Missing speech assets and silence are neutral while engine failures stay held",()=>{
             var root=Path.Combine(temp,"speech-errors-media");Directory.CreateDirectory(root);var file=Path.Combine(root,"a.mkv");File.WriteAllText(file,"unchanged");
             var output=Path.Combine(temp,"speech-errors-out");var guide=Path.Combine(output,"catalog.json");Data.Save(guide,new{episodes=new[]{new Episode(1,1,1,"One")}});using var http=new HttpClient(new NoNetwork());

@@ -41,7 +41,7 @@ static class SubtitleNormalizationTests {
   });
   test("Reference retrieval includes titled episode uploads and refreshes old season-only caches",()=>{
    var root=Path.Combine(temp,"subtitle-episode-uploads");var series=new SeriesIdentity("tvdb","1","Example");Episode[] guide=[new(1,1,1,"First Story"),new(2,1,2,"Second Story"),new(3,1,3,"Third Story")];
-   byte[] Zip(IEnumerable<string> names){using var bytes=new MemoryStream();using(var z=new ZipArchive(bytes,ZipArchiveMode.Create,true))foreach(var name in names){using var w=new StreamWriter(z.CreateEntry(name).Open());w.Write(string.Join("\n\n",Enumerable.Range(0,30).Select(i=>$"{i+1}\n00:00:{i:00},000 --> 00:00:{i:00},900\nA unique spoken line of dialogue {i}.")));}return bytes.ToArray();}
+   byte[] Zip(IEnumerable<string> names){using var bytes=new MemoryStream();using(var z=new ZipArchive(bytes,ZipArchiveMode.Create,true))foreach(var name in names){using var w=new StreamWriter(z.CreateEntry(name).Open());w.Write(string.Join("\n\n",Enumerable.Range(0,30).Select(i=>$"{i+1}\n00:00:{i:00},000 --> 00:00:{i:00},900\nstory{TitleMapping.Label(name)!.First}cue{i} alpha{i} planet{i} nebula{i} captain{i} finale{i}.")));}return bytes.ToArray();}
    var uploads=guide.Select(e=>$"Example.01x{e.Number:00}.{e.Title}.srt").ToArray();var downloads=new List<string>();int searches=0;
    HttpResponseMessage Json(string s)=>new(HttpStatusCode.OK){Content=new StringContent(s)};
    HttpMessageHandler Api()=>new Response(r=>{

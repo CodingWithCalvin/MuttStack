@@ -6,7 +6,7 @@ A Windows desktop app for identifying TV episodes from video dialogue, reviewing
 
 ## Features
 
-- One saved process per Scout, tied to a source video folder. Pause, resume, review issues, or identify newly added files without repeating successful work.
+- Each Scout keeps its own source folder, progress and saved results. Up to two Scouts can process different source folders concurrently, with additional Scouts queued. Switch between them and pause or stop each independently. Speech and AI share one model worker.
 - Show discovery from folder names, filenames and embedded metadata. Confirm catalog hints directly, or ask AI to verify sample dialogue.
 - TVDB, TMDB and TVmaze title/ID lookup and episode-guide downloads.
 - Confirm the series without loading a model; choose any subset of episodes for dialogue identification.

@@ -131,8 +131,8 @@ public partial class MainWindow : Window
     }
     private void SetBusy(bool value) {
         if(!value)ClearModelActivity();
-        RestartRunButton.IsEnabled=!value;DeleteRunButton.IsEnabled=!value;UndoDeleteButton.IsEnabled=!value;HistoryList.IsEnabled=!value;SettingsTabs.IsEnabled=!value;SettingsSaveButton.IsEnabled=!value;LibraryPage.IsEnabled=!value;
-        CancelButton.IsEnabled=value;Progress.IsIndeterminate=value;Progress.Visibility=value?Visibility.Visible:Visibility.Collapsed;
+        RestartRunButton.IsEnabled=!value;DeleteRunButton.IsEnabled=!value;UndoDeleteButton.IsEnabled=!value;HistoryList.IsEnabled=CanSwitchScout;SettingsTabs.IsEnabled=!value&&activeScouts.Count==0;SettingsSaveButton.IsEnabled=!value&&activeScouts.Count==0;LibraryPage.IsEnabled=!value;
+        CancelButton.IsEnabled=value&&operation?.IsCancellationRequested!=true&&pauseRequest?.IsRequested!=true;Progress.IsIndeterminate=value;Progress.Visibility=value?Visibility.Visible:Visibility.Collapsed;
         RefreshScoutActions();RefreshMoveSelection();RefreshResolutionActions();RefreshRunOptions();
         ProcessingActionText.Text=pauseRequest==null?"Cancel processing":"Pause Scout";
         System.Windows.Automation.AutomationProperties.SetName(CancelButton,ProcessingActionText.Text);
@@ -147,7 +147,6 @@ public partial class MainWindow : Window
     private async void IdentifyNewFiles(object sender,RoutedEventArgs e)=>await IdentifyRunAsync(true,false,false,true);
     private async Task IdentifyRunAsync(bool restart,bool reanalyze=false,bool reviewIssues=false,bool newFilesOnly=false) {
         if(operation!=null)return;
-        LocalRuntime? runtime=null;DialogueMatcher? matcher=null;string? usageOutput=null;
         try {
             if(restart&&(workspace==null||string.IsNullOrWhiteSpace(workspace.Model)))throw new InvalidOperationException("Resume Scout is available for saved dialogue-identification runs. Use Identify episodes to start a new Scout.");
             var preferences=SaveSettingsCore();
@@ -162,66 +161,18 @@ public partial class MainWindow : Window
             var selectedFiles=restart?workspace.SelectedFiles.ToList():ChooseVideos();if(selectedFiles==null)return;
             if(selectedFiles.Count==0)throw new InvalidOperationException("This Scout has no saved file selection. Use Identify episodes to start a new Scout.");
             if(restart){outputPath=workspaces.DirectoryFor(workspace!);catalogPath=workspace!.Catalog;dialoguePath=workspace.Dialogue;LibraryPath.Text=workspace.Library;}
-            workspace!.SelectedFiles=selectedFiles;SaveDraft();workspace.Report=Path.Combine(outputPath,"report.json");workspace.Preview="";previewHtml=null;PreviewGrid.ItemsSource=null;workspace.Status="Running";workspace.Model=string.IsNullOrWhiteSpace(preferences.Model)?"Subtitle matching":preferences.Model;workspace.Provider=preferences.Provider;
-            forceStopRequested=false;pauseRequest=new();operation=new();SetBusy(true);ShowPage("Activity");var progress=new Progress<string>(Log);var token=operation.Token;
-            var guideTarget=ScoutStorage.Exists(catalogPath)?catalogPath:Path.Combine(outputPath,"catalog.json");
-            using(var metadataHttp=MetadataHttp()) {
-                var identity=workspace.SeriesIdentity;
-                if(!ScoutStorage.Exists(guideTarget))Log("Downloading the episode guide for "+identity!.Label+"…");
-                Log("Checking the episode guide and retrieving missing descriptions…");
-                var guide=await EpisodeGuidePreparation.EnsureAsync(guideTarget,identity,identity==null?null:CatalogClient(metadataHttp,identity.Provider),token);
-                var missing=guide.Where(e=>string.IsNullOrWhiteSpace(e.Overview)).ToList();
-                if(missing.Count>0)Log($"{missing.Count} guide entries still lack descriptions. AI suggestions for those entries may be held; subtitle matching can use their provider titles.");
-            }
-            catalogPath=workspaces.SaveCatalog(workspace,guideTarget);
-            Log(newFilesOnly?"Scanning for added videos; saved results will be retained.":reviewIssues?"Reviewing unresolved files and competing recordings using saved evidence.":reanalyze?$"Reanalyzing {selectedFiles.Count} videos with the current model; reusing unchanged dialogue and fingerprints.":restart?$"Resuming {selectedFiles.Count} selected videos; reusing successful results for unchanged files.":$"Identifying {selectedFiles.Count} selected videos from dialogue.");
-            RecordEvent(workspace.UseAiFallback?$"AI fallback enabled: {preferences.Provider} / {preferences.Model}.":"AI fallback is off; unresolved files will remain available for later review.");
-            if(workspace.UseAiFallback)Log($"Model request timeout: {preferences.EffectiveTimeoutSeconds/60.0:0.#} minutes per request. Timeouts are held for retry; they do not cancel the Scout.");
-            var root=LibraryPath.Text;var catalog=catalogPath;var output=outputPath;
-            var dialogue=string.IsNullOrWhiteSpace(dialoguePath)?null:dialoguePath;
-            bool aiReady=false;
-            async Task EnsureAi(CancellationToken ct) {
-                if(aiReady)return;
-                ct.ThrowIfCancellationRequested();((IProgress<string>)progress).Report("AI is needed for unresolved dialogue; preparing the configured model…");
-                if(preferences.Provider=="managed") {
-                    if(!File.Exists(preferences.ModelFile)&&preferences.AutoDownloadMissing) {
-                        var profile=ModelDownloads.Profiles.Single(p=>p.Id==preferences.DownloadProfile);
-                        using var downloadHttp=new HttpClient{Timeout=TimeSpan.FromHours(12)};
-                        preferences.ModelFile=await ModelDownloads.DownloadAsync(profile,preferences,downloadHttp,progress,ct);
-                        await Dispatcher.InvokeAsync(()=>ModelFileEntry.Text=preferences.ModelFile);
-                    }
-                    runtime=await LocalRuntime.StartAsync(preferences,progress,ct);
-                }
-                aiReady=true;
-            }
-            string endpoint=preferences.Provider=="managed"?$"http://127.0.0.1:{new Uri(preferences.LocalEndpoint).Port}/v1/chat/completions":preferences.Endpoint;
-            var settings=new MatchSettings(root,catalog,output,preferences.Model,endpoint,preferences.Ffmpeg,preferences.Ffprobe,dialogue,selectedFiles,workspace.SeriesIdentity,restart,reanalyze,reviewIssues,newFilesOnly,workspace.SelectionScope,workspace.ContentOptions,workspace.UseAiFallback);
-            using var handler=new HttpClientHandler {AllowAutoRedirect=false};
-            using var http=new HttpClient(handler){Timeout=TimeSpan.FromSeconds(preferences.EffectiveTimeoutSeconds)};
-            matcher=new DialogueMatcher(http,preferences.Inference(key),EnsureAi,BeginModelActivity());
-            usageOutput=Path.Combine(output,"usage.json");
-            Scout.Core.Subtitles.SubtitleMatcher? subtitleMatcher=null;
-            if(preferences.UseSubtitleMatching) {
-                var subtitleCache=Path.Combine(Environment.GetEnvironmentVariable("SCOUT_SETTINGS")??Path.Combine(SettingsStore.DefaultDirectory,"UI-Trial"),"SubtitleCache");
-                var source=new Scout.Core.Subtitles.SubdlReferences(subtitleCache,settingsStore.ReadKey(SubtitleCredentials.Subdl),workspace.SeriesIdentity?.Provider=="tmdb"?settingsStore.ReadKey("metadata|tmdb"):null);
-                subtitleMatcher=new(source,subtitleCache);
-            }
-            var pipeline=new MediaPipeline(matcher,subtitles:subtitleMatcher,speech:preferences.Speech.Enabled?new SpeechTranscriber(preferences.Speech,preferences.ModelDirectory):null);
-            var path=await Task.Run(()=>pipeline.RunAsync(settings,progress,token,pauseRequest),token);
-            LoadReport(path);ShowPage("Results");Status.Text="Matching complete. Unresolved files are held for review.";
-        }catch(ScoutPausedException){FinishPaused(forceStopRequested);}
-        catch(OperationCanceledException) when(operation?.IsCancellationRequested==true){FinishPaused(true);}
-        catch(OperationCanceledException ex){if(workspace!=null)workspace.Status="Needs attention";var failure=new IOException("A background request was interrupted without a user cancellation. Saved progress is retained; choose Resume Scout to retry unfinished files.",ex);RecordEvent(failure.Message);Error(failure);}
-        catch(Exception ex){if(workspace!=null){workspace.Status="Needs attention";RecordEvent(ex.Message);}Error(ex);}
-        finally{
-            if(runtime!=null)await runtime.DisposeAsync();
-            if(matcher!=null) {
-                var usage=matcher.Usage;UsageText.Text=$"{usage.Requests} requests · {usage.InputTokens:N0} reported input tokens · {usage.OutputTokens:N0} reported output tokens · {usage.Provider}";
-                if(usageOutput!=null)try{Data.Save(usageOutput,usage);}catch(Exception ex){Log("Could not save usage summary: "+ex.Message);}
-            }
-            operation?.Dispose();operation=null;pauseRequest=null;forceStopRequested=false;SetBusy(false);RefreshHistory();
-            if(workspace?.Status=="Paused")Status.Text=PauseNotice.Text;
-        }
+            var run=workspace!;
+            var reservation=runCoordinator.Reserve(run.Id,run.Library);
+            var job=new ActiveScout(run,reservation);
+            try {
+                run.SelectedFiles=selectedFiles;SaveDraft();run.Catalog=catalogPath;run.Dialogue=dialoguePath;
+                run.Report=Path.Combine(outputPath,"report.json");run.Preview="";previewHtml=null;PreviewGrid.ItemsSource=null;
+                run.Status="Queued";run.Model=string.IsNullOrWhiteSpace(preferences.Model)?"Subtitle matching":preferences.Model;run.Provider=preferences.Provider;
+                activeScouts.Add(run.Id,job);workspaces.Save(run);AttachSelectedWorker();ShowPage("Activity");
+                WorkerLog(job,job.LastMessage);RefreshHistory();
+            }catch {activeScouts.Remove(run.Id);reservation.Dispose();job.Cancellation.Dispose();operation=null;pauseRequest=null;SetBusy(false);throw;}
+            await RunScoutWorkerAsync(job,preferences,key,restart,reanalyze,reviewIssues,newFilesOnly);
+        }catch(Exception ex){Error(ex);}
     }
     private async void GeneratePreview(object sender,RoutedEventArgs e) {
         if(operation!=null||report==null)return;
@@ -262,7 +213,7 @@ public partial class MainWindow : Window
     }
     private void ForceStop(object sender,RoutedEventArgs e) {
         if(operation==null||pauseRequest==null||forceStopRequested)return;
-        forceStopRequested=true;CancelButton.IsEnabled=ForceStopButton.IsEnabled=false;
+        forceStopRequested=true;if(SelectedWorker is {} worker)worker.Forced=true;CancelButton.IsEnabled=ForceStopButton.IsEnabled=false;
         PauseNotice.Text="Force stop requested. Cancelling the current work and saving progress. Resume Scout will retry interrupted or unfinished files.";
         PauseNotice.Visibility=Visibility.Visible;Log("Force stop requested — cancelling current work now.");
         operation.Cancel();
@@ -276,7 +227,7 @@ public partial class MainWindow : Window
     }
     private void OnClosing(object? sender,CancelEventArgs e) {
         if(operation==null)SaveDraft();
-        if(operation!=null){e.Cancel=true;MessageBox.Show(this,pauseRequest==null?"Cancel processing and let it stop before closing.":"Choose Pause Scout to finish the current file, or Force stop to cancel it now. Close the app after it confirms that Scout has stopped.","Processing is running");}
+        if(operation!=null||activeScouts.Count>0){e.Cancel=true;MessageBox.Show(this,activeScouts.Count>0?$"{activeScouts.Count} Scout(s) are active or queued. Open each active Scout and choose Pause Scout or Force stop, then wait for them to stop before closing.":pauseRequest==null?"Cancel processing and let it stop before closing.":"Choose Pause Scout to finish the current file, or Force stop to cancel it now. Close the app after it confirms that Scout has stopped.","Processing is running");}
     }
     private void Error(Exception ex){
         Status.Text="Needs attention";

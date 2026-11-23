@@ -48,6 +48,9 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
    if(row["subtitle_match"] is JsonObject subtitle) {
     bool current=Subtitles.SubtitleResult.IsSubtitle(row);
     sections.Add(new(current?"Subtitle matching":"Subtitle stage before AI",subtitle.Text("reason")+"\n"+subtitle.Text("note")));
+    if(subtitle["source_title_evidence"] is JsonObject sourceTitle)
+     sections.Add(new("Corroborated source title",sourceTitle.Text("name")+"\nUnique provider title supported by a complete subtitle match, repeated title terms ("+string.Join(", ",sourceTitle.Array("title_terms").Select(n=>n!.GetValue<string>()))+") and distinctive synopsis terms: "+string.Join(", ",sourceTitle.Array("synopsis_terms").Select(n=>n!.GetValue<string>()))+". The filename is a hint for this recording only."));
+    if(subtitle.Array("equivalent_references").Count>0)sections.Add(new("Duplicate subtitle versions",$"{subtitle.Array("equivalent_references").Count} equivalent reference version(s) grouped by full dialogue. Different upload numbers do not establish additional episode identities."));
     if(subtitle["best"] is JsonObject best) {
      sections.Add(new("Subtitle references",string.Join("\n",best.Array("references").Select(r=>r.Text("name")+"\n"+r.Text("url")))));
      sections.Add(new("Provider mapping",subtitle.Text("provider").ToUpperInvariant()+" series "+subtitle.Text("series_id")+"\n"+best["link"].Text("method").Replace('-',' ')+"\nUpload numbering is not used as provider numbering."));

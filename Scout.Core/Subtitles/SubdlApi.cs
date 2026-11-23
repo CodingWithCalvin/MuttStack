@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 namespace Scout.Core.Subtitles;
 
-sealed class SubdlAccessException(string message):IOException(message);
+sealed class SubdlAccessException(string message,HttpStatusCode? status=null):IOException(message) {public HttpStatusCode? Status {get;}=status;}
 sealed class SubdlApi:IDisposable {
  readonly HttpClient http;readonly string key;
  public SubdlApi(string key,HttpMessageHandler? handler=null) {
@@ -13,7 +13,7 @@ sealed class SubdlApi:IDisposable {
   this.key=key;http=new(handler??new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(60)};
  }
  public Task<JsonObject> Titles(string series,CancellationToken ct)=>Json("movies/search?q="+Uri.EscapeDataString(series)+"&type=tv&limit=30",ct);
- public Task<JsonObject> Subtitles(string id,int season,CancellationToken ct)=>Json("subtitles/search?sd_id="+Uri.EscapeDataString(id)+"&type=tv&languages=en&season="+season+"&unpack=1&subs_per_page=30",ct);
+ public Task<JsonObject> Subtitles(string id,int season,CancellationToken ct,int? episode=null)=>Json("subtitles/search?sd_id="+Uri.EscapeDataString(id)+"&type=tv&languages=en&season="+season+"&unpack=1&subs_per_page=30&releases=1"+(episode.HasValue?"&episode="+episode.Value:""),ct);
  async Task<JsonObject> Json(string relative,CancellationToken ct) {
   var bytes=await Get(new Uri("https://api.subdl.com/api/v2/"+relative),4*1024*1024,false,ct);
   try {
@@ -55,7 +55,7 @@ sealed class SubdlApi:IDisposable {
      if(!download||response.Headers.Location is not Uri location)throw new SubdlAccessException("SubDL returned an unexpected redirect.");
      uri=new Uri(uri,location);Validate(uri,true);continue;
     }
-    if(!response.IsSuccessStatusCode)throw new SubdlAccessException($"SubDL returned HTTP {(int)response.StatusCode} ({response.StatusCode})."+((int)response.StatusCode is 401 or 403?" Check that the API key is valid and the account permits access.":response.StatusCode==HttpStatusCode.TooManyRequests?" Account or download limit reached; no automatic retry was attempted.":""));
+    if(!response.IsSuccessStatusCode)throw new SubdlAccessException($"SubDL returned HTTP {(int)response.StatusCode} ({response.StatusCode})."+((int)response.StatusCode is 401 or 403?" Check that the API key is valid and the account permits access.":response.StatusCode==HttpStatusCode.TooManyRequests?" Account or download limit reached; no automatic retry was attempted.":""),response.StatusCode);
     if(response.Content.Headers.ContentLength>limit)throw new InvalidDataException("SubDL response exceeds the test's size limit.");
     await using var input=await response.Content.ReadAsStreamAsync(requestToken);return await Bounded(input,limit,requestToken);
    }

@@ -30,7 +30,7 @@ public partial class MainWindow {
   DiscoverSeriesButton.IsEnabled=!busy&&workspace?.Status=="Draft";
   ShowProvider.IsEnabled=!busy&&workspace?.Status=="Draft";
   PreviewButton.Visibility=!busy&&saved&&nextStep!="preview"?Visibility.Visible:Visibility.Collapsed;
-  NextStepButton.Content=label;NextStepButton.IsEnabled=!busy;
+  NextStepButton.Content=label;NextStepButton.IsEnabled=!busy&&(nextStep!="settings"||activeScouts.Count==0);
   System.Windows.Automation.AutomationProperties.SetName(NextStepButton,label);
   NextStepButton.Visibility=busy?Visibility.Collapsed:Visibility.Visible;
   CancelButton.Visibility=busy?Visibility.Visible:Visibility.Collapsed;

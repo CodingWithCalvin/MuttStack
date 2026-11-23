@@ -21,14 +21,18 @@ public partial class MainWindow
     { public void Report(ModelActivity value) => report(value); }
     private void ShowModelActivity(ModelActivity update)
     {
+        RenderModelActivity(update);
+        var text = update.Heading + (update.Source.Length == 0 ? "" : " · " + update.Source) + " · " + update.Detail;
+        if (!update.IsHeartbeat) Log(text);
+        else if (!forceStopRequested && pauseRequest?.IsRequested != true) Status.Text = text;
+    }
+    private void RenderModelActivity(ModelActivity update)
+    {
         ModelActivityPanel.Visibility = Visibility.Visible;
         ModelActivityHeading.Text = update.Heading;
         ModelActivitySource.Text = update.Source;
         ModelActivitySource.Visibility = update.Source.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         ModelActivityDetail.Text = update.Detail;
-        var text = update.Heading + (update.Source.Length == 0 ? "" : " · " + update.Source) + " · " + update.Detail;
-        if (!update.IsHeartbeat) Log(text);
-        else if (!forceStopRequested && pauseRequest?.IsRequested != true) Status.Text = text;
     }
     private void ClearModelActivity()
     {

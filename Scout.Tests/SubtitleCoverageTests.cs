@@ -16,7 +16,7 @@ static class SubtitleCoverageTests {
    Episode[] guide=[new(1,1,1,"Opening"),new(2,2,1,"Return")];
    using var bytes=new MemoryStream();
    using(var zip=new ZipArchive(bytes,ZipArchiveMode.Create,true))foreach(var name in combined?new[]{"Example.S01E01.Opening.srt","Example.S02E01.Return.srt"}:new[]{"Example.S01E01.Opening.srt"}) {
-    using var writer=new StreamWriter(zip.CreateEntry(name).Open());writer.Write(string.Join("\n\n",Enumerable.Range(0,30).Select(i=>$"{i+1}\n00:00:{i:00},000 --> 00:00:{i:00},900\nA distinctive line of dialogue number {i}.")));
+    using var writer=new StreamWriter(zip.CreateEntry(name).Open());writer.Write(string.Join("\n\n",Enumerable.Range(0,30).Select(i=>$"{i+1}\n00:00:{i:00},000 --> 00:00:{i:00},900\n{(name.Contains("Opening")?"opening":"return")}{i} alpha{i} planet{i} nebula{i} captain{i} finale{i}.")));
    }
    int requests=0;
    HttpResponseMessage Json(string value)=>new(HttpStatusCode.OK){Content=new StringContent(value)};

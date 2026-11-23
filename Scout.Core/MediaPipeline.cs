@@ -157,7 +157,7 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
                 .ThenBy(p=>prepared.TryGetValue(p,out var ready)?ready["duration"]?.GetValue<double>()??0:0).ThenBy(p=>p,StringComparer.OrdinalIgnoreCase).ToList();
             progress.Report("Identifying episodes first. Short clips and optional content follow; duration alone never excludes a recording.");
         }
-        var subtitleFirst=subtitles!=null&&settings.SeriesIdentity!=null||!settings.UseAiFallback;
+        var subtitleFirst=subtitles!=null&&settings.SeriesIdentity!=null||speech!=null||!settings.UseAiFallback;
         var aiPaths=new List<string>();
         foreach(var subtitlePass in !settings.UseAiFallback?new[]{true}:subtitleFirst?new[]{true,false}:new[]{false}) {
         var batch=subtitleFirst&&!subtitlePass?aiPaths:paths;
@@ -212,7 +212,7 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
                 JsonObject? result=null;
                 if(subtitles!=null&&settings.SeriesIdentity is {} series) {
                     try {
-                        var attempt=await subtitles.IdentifyAsync(cues,episodes,series,progress,ct);
+                        var attempt=await subtitles.IdentifyAsync(cues,episodes,series,progress,ct,new SubtitleSourceContext(Path.GetFileName(path)));
                         SubtitleResult.Apply(row,episodes,attempt);
                         if(attempt.Result!=null&&SubtitleResult.Valid(row,episodes,series)) {
                             result=attempt.Result;progress.Report("Subtitle dialogue supports "+string.Join(" / ",attempt.Result.Array("matches").Select(m=>{var e=episodes.Single(e=>e.Id==m.Int("episode_id"));return e.Code+" — "+e.Title;}))+"; verifying source file.");

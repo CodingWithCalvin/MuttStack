@@ -76,13 +76,14 @@ public partial class MainWindow
     }
     private async void DiscoverShow(object sender,RoutedEventArgs e) {
         if(operation!=null||workspace==null)return;
-        LocalRuntime? runtime=null;ModelTransport? transport=null;HttpClient? modelHttp=null;
+        LocalRuntime? runtime=null;ModelTransport? transport=null;HttpClient? modelHttp=null;IDisposable? modelLease=null;IDisposable? sourceLease=null;
         try {
             if(!EnsureDraftScout())return;
             var paths=ShowDiscovery.RandomSample(VideoSelection.DiscoveryCandidates(workspace));
             if(paths.Count==0)throw new InvalidOperationException("No supported videos were found in this folder.");
             workspace.DiscoveryFiles=paths;workspaces.Save(workspace);RefreshSelection();
             var provider=SelectedMetadataProvider;var root=workspace.Library;var directory=workspaces.DirectoryFor(workspace);var settings=SaveSettingsCore();
+            sourceLease=runCoordinator.Reserve(workspace.Id,root);
             operation=new();SetBusy(true);ShowPage("Activity");var token=operation.Token;IProgress<string> progress=new Progress<string>(Log);
             using var http=MetadataHttp();var catalog=CatalogClient(http,provider);
             var hints=await Task.Run(()=>new ShowDiscovery(catalog).DiscoverAsync(root,settings.Ffprobe,settings.Ffmpeg,null,progress,token,paths,hintsOnly:true),token);
@@ -96,6 +97,8 @@ public partial class MainWindow
             }
             if(string.IsNullOrWhiteSpace(settings.Model))throw new InvalidOperationException("Configure a model in Settings to use AI assistance. You can confirm a catalog suggestion without a model.");
             workspace.SeriesIdentity=null;workspace.Catalog="";catalogPath="";SeriesName.Text="";ShowIdentity.Text="Identifying series…";workspaces.Save(workspace);
+            Log("Waiting for the shared speech/model worker for series discovery…");
+            modelLease=await runCoordinator.EnterModelAsync(null,token);
             var requestNumber=0;var modelActivity=BeginModelActivity();
             async Task<JsonObject> Infer(List<DiscoveryDialogue> blocks,List<ShowCandidate> candidates,CancellationToken ct) {
                 var options=settings.Inference(outputTokenLimit:ShowDiscovery.OutputTokenLimit(settings.ManagedThinking));
@@ -125,8 +128,13 @@ public partial class MainWindow
         catch(OperationCanceledException ex){Error(new IOException("A series-discovery request was interrupted without a user cancellation. Retry series identification.",ex));}
         catch(Exception ex){Error(ex);}
         finally {
-            if(transport!=null&&workspace!=null)Data.Save(Path.Combine(workspaces.DirectoryFor(workspace),"discovery-usage.json"),transport.Usage);
-            if(runtime!=null)await runtime.DisposeAsync();modelHttp?.Dispose();operation?.Dispose();operation=null;SetBusy(false);
+            Exception? cleanupError=null;
+            try {
+                if(runtime!=null)await runtime.DisposeAsync();
+                if(transport!=null&&workspace!=null)Data.Save(Path.Combine(workspaces.DirectoryFor(workspace),"discovery-usage.json"),transport.Usage);
+            }catch(Exception ex){cleanupError=ex;}
+            finally{modelLease?.Dispose();sourceLease?.Dispose();modelHttp?.Dispose();operation?.Dispose();operation=null;SetBusy(false);}
+            if(cleanupError!=null)Error(cleanupError);
         }
     }
     private void ApplyDiscoveredShow(ShowCandidate selected) {
