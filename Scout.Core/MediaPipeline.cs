@@ -158,17 +158,22 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
             progress.Report("Identifying episodes first. Short clips and optional content follow; duration alone never excludes a recording.");
         }
         var subtitleFirst=subtitles!=null&&settings.SeriesIdentity!=null||speech!=null||!settings.UseAiFallback;
-        var aiPaths=new List<string>();
-        foreach(var subtitlePass in !settings.UseAiFallback?new[]{true}:subtitleFirst?new[]{true,false}:new[]{false}) {
-        var batch=subtitleFirst&&!subtitlePass?aiPaths:paths;
+        var titlePaths=new List<string>();var aiPaths=new List<string>();
+        bool hasTitleCandidates=paths.Any(p=>TitleCandidates.Find(p,episodes)!=null);
+        // Every recording gets its cheaper evidence checks before broad AI search.
+        // Phase 0 never invokes AI, including when title hints are available.
+        foreach(var phase in !settings.UseAiFallback?new[]{0}:subtitleFirst?(hasTitleCandidates?new[]{0,1,2}:new[]{0,2}):(hasTitleCandidates?new[]{1,2}:new[]{2})) {
+        bool subtitlePass=phase==0,titlePass=phase==1;
+        var batch=phase==2&&(subtitleFirst||hasTitleCandidates)?aiPaths:titlePass&&subtitleFirst?titlePaths:paths;
         if(batch.Count==0)continue;
         index=0;
         if(subtitlePass)progress.Report($"Subtitle pass: checking {batch.Count} recordings"+(settings.UseAiFallback?" before any AI fallback.":"; AI fallback is off for this Scout."));
-        else if(subtitleFirst)progress.Report($"Subtitle pass complete. AI fallback: {batch.Count} unresolved recordings remain.");
+        else if(titlePass)progress.Report($"Title verification: checking existing episode-title candidates for {batch.Count} unresolved recordings before full AI identification.");
+        else if(subtitleFirst||hasTitleCandidates)progress.Report($"Subtitle pass complete. AI fallback: {batch.Count} unresolved recordings remain after title verification.");
         foreach(var path in batch) {
             pause?.Checkpoint();ct.ThrowIfCancellationRequested();
             var sourceLabel=$"[{++index}/{batch.Count}] {Path.GetFileName(path)}";
-            if(subtitleFirst&&!subtitlePass)sourceLabel="AI fallback "+sourceLabel;
+            if(!subtitlePass&&(subtitleFirst||hasTitleCandidates))sourceLabel=(titlePass?"Title verification ":"AI fallback ")+sourceLabel;
             progress.Report(sourceLabel);
             if(preparationErrors.Contains(path))continue;
             var savedRow=rows.OfType<JsonObject>().FirstOrDefault(r=>PreviewPlanner.Same(r.Text("path"),path));
@@ -184,6 +189,7 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
             if(!settings.Reanalyze&&!settings.ReviewIssues&&settings.Restart&&cachedRows.TryGetValue(Path.GetFullPath(path),out var completed)&&RunRecovery.CanReuse(completed,episodes,settings.SeriesIdentity)) {
                 progress.Report("Reusing successful identification and verified source fingerprints.");ReportCandidate(completed,progress,reused:true);continue;
             }
+            if(titlePass&&TitleCandidates.Find(path,episodes)==null){aiPaths.Add(path);continue;}
             var row=new JsonObject {["path"]=Path.GetFullPath(path),["matching_method"]="reasoning",["full_dialogue"]=true,["candidates"]=new JsonArray()};
             if(issues)row["issue_review_reason"]=rows.FirstOrDefault(r=>string.Equals(Path.GetFullPath(r.Text("path")),path,StringComparison.OrdinalIgnoreCase)).Text("issue_review_reason","unfinished or competing recording");
             try {
@@ -192,6 +198,7 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
                 cachedRows.TryGetValue(Path.GetFullPath(path),out var cached);
                 if(prepared.TryGetValue(path,out var ready)&&CompilationEvidence.SourceUnchanged(ready)) {
                     cues=MultipartEvidence.Cues(ready);row["duration"]=ready["duration"]?.DeepClone();row["transcription"]=ready["transcription"]?.DeepClone();
+                    foreach(var field in new[]{"title_candidate","title_verification_attempt"})if(ready[field]!=null)row[field]=ready[field]!.DeepClone();
                     progress.Report("Using prepared full dialogue.");
                 } else {
                     var evidence=await PrepareAsync(path,cached,settings,progress,ct,pause);
@@ -224,13 +231,39 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
                         progress.Report(row["subtitle_match"].Text("reason")+(!settings.UseAiFallback?" Left unresolved for later; AI fallback is off.":subtitlePass?" Deferring AI until the subtitle pass is complete.":" Using AI with saved dialogue."));
                     }
                 }
-                if(result==null&&subtitlePass) {
-                    if(!CompilationEvidence.SourceUnchanged(row))throw new IOException("Media changed while comparing subtitle dialogue.");
+                var titleCandidate=TitleCandidates.Find(path,episodes);
+                if(result==null&&titleCandidate!=null)row["title_candidate"]=JsonSerializer.SerializeToNode(titleCandidate,Data.Options);
+                void Defer(List<string> pending) {
+                    if(!CompilationEvidence.SourceUnchanged(row))throw new IOException("Media changed while checking dialogue.");
                     row["matching_method"]="reasoning";row.Remove("reasoning");row["candidates"]=new JsonArray();row["status"]="awaiting_ai";
                     if(cached!=null&&RunRecovery.SourceUnchanged(cached))foreach(var field in new[]{"original_path","path_history","duplicate_of"})if(cached[field]!=null)row[field]=cached[field]!.DeepClone();
-                    // Keep dialogue resumable, but do not claim an episode or invoke
-                    // the model until every selected recording has had its chance.
-                    prepared[path]=row.DeepClone().AsObject();SaveRow(row);aiPaths.Add(path);continue;
+                    prepared[path]=row.DeepClone().AsObject();SaveRow(row);pending.Add(path);
+                }
+                if(result==null&&subtitlePass) {Defer(hasTitleCandidates||!settings.UseAiFallback?titlePaths:aiPaths);continue;}
+                if(result==null&&titlePass) {
+                    // A previous competing claim or conflicting reference identity
+                    // needs the full-guide review, not a filename-directed check.
+                    bool conflict=issues&&cached.Array("candidates").Count>0||row["subtitle_match"].Bool("mapping_conflict");
+                    if(titleCandidate!=null&&!conflict) {
+                        var titleKey=TitleCandidates.Signature(titleCandidate,cues,episodes,matcher,settings.Model,settings.Endpoint,generation);
+                        var titleCache=Path.Combine(cache,"title-candidates",titleKey+".json");
+                        JsonObject? audit=null;
+                        if(ScoutStorage.Exists(titleCache))try {audit=Data.Read(titleCache);TitleCandidates.Accepted(audit,titleCandidate,cues);}
+                        catch(Exception ex) when(ex is IOException or InvalidDataException or JsonException or InvalidOperationException or ArgumentException){audit=null;}
+                        try {
+                            if(audit==null) {
+                                progress.Report("Verifying title candidate against complete dialogue: "+string.Join(" / ",titleCandidate.Episodes.Select(e=>e.Code+" — "+e.Title))+"…");
+                                audit=await matcher.VerifyTitleCandidateAsync(cues,titleCandidate,settings.Model,settings.Endpoint,ct);
+                                Data.Save(titleCache,audit);
+                            }else progress.Report("Reusing exact-input title verification.");
+                            bool accepted=TitleCandidates.Accepted(audit,titleCandidate,cues);
+                            row["title_verification_attempt"]=new JsonObject{["accepted"]=accepted,["result"]=audit.DeepClone(),["reason"]=accepted?"Complete dialogue supports the proposed episode title(s).":"Title verification did not establish the complete proposed recording; full identification is still needed."};
+                            if(accepted)result=audit;
+                        }catch(Exception ex) when(ex is InvalidDataException or JsonException or ModelContextException) {
+                            row["title_verification_attempt"]=new JsonObject{["accepted"]=false,["reason"]="Title verification did not produce valid grounded evidence; full identification is still needed."};
+                        }
+                    }else if(conflict)row["title_verification_attempt"]=new JsonObject{["accepted"]=false,["reason"]="Competing claims or conflicting reference identities require full-guide review."};
+                    if(result==null) {progress.Report("Deferring full identification until all title candidates have been checked.");Defer(aiPaths);continue;}
                 }
                 if(result==null) {
                     row["matching_method"]="reasoning";row.Remove("reasoning");row["candidates"]=new JsonArray();
@@ -241,7 +274,7 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
                 row["reasoning"]=result.DeepClone();
                 // Issue review already performed both independent full-guide passes.
                 // Reuse that exact-input verification during collection reconciliation.
-                if(issues&&result.Text("method")==DialogueMatcher.Version)row["conflict_review"]=new JsonObject{["signature"]=ConflictReview.Signature(cues,episodes,matcher,settings.Model,settings.Endpoint),
+                if(issues&&result.Text("method")==DialogueMatcher.Version&&result["title_verification"]==null)row["conflict_review"]=new JsonObject{["signature"]=ConflictReview.Signature(cues,episodes,matcher,settings.Model,settings.Endpoint),
                     ["source"]="issue_review",["previous_reasoning"]=cached?["reasoning"]?.DeepClone(),["previous_candidates"]=cached?["candidates"]?.DeepClone()};
                 row["candidates"]=new JsonArray(result.Array("matches").Select(n=>(JsonNode)new JsonObject{
                     ["episode"]=JsonSerializer.SerializeToNode(episodes.Single(e=>e.Id==n.Int("episode_id")),Data.Options),
@@ -283,7 +316,7 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
             pause?.Checkpoint();
         }
         }
-        if(!settings.UseAiFallback)progress.Report($"Subtitle pass complete. {aiPaths.Count} recording(s) left unresolved for later. Enable Use AI for unresolved files, then choose Review issues when ready.");
+        if(!settings.UseAiFallback)progress.Report($"Subtitle pass complete. {titlePaths.Count} recording(s) left unresolved for later. Enable Use AI for unresolved files, then choose Review issues when ready.");
         pause?.Checkpoint();
         // Reconcile only two distinct partial recordings claiming the same catalog episode.
         // Fingerprint duplicates are collapsed before any model comparison.

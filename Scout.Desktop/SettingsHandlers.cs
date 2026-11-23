@@ -146,13 +146,14 @@ public partial class MainWindow
   if(!string.IsNullOrWhiteSpace(CompatibleKeyEntry.Password))ConnectionPolicy.CloudUri(settings.CompatibleEndpoint);
   if(!string.IsNullOrWhiteSpace(OpenAiKeyEntry.Password))settingsStore.SetKey("openai|https://api.openai.com/v1/responses",OpenAiKeyEntry.Password.Trim());
   if(!string.IsNullOrWhiteSpace(CompatibleKeyEntry.Password))settingsStore.SetKey("compatible|"+settings.CompatibleEndpoint.TrimEnd('/'),CompatibleKeyEntry.Password.Trim());
-  SaveMetadataKeys();SaveSubtitleKey();settingsStore.Save(settings);
+  SaveMetadataKeys();SaveSubtitleKey();SaveOpenSubtitlesCredentials();settingsStore.Save(settings);
   appSettings=settings;RefreshRunOptions();if(report!=null)RestorePreview();OpenAiKeyEntry.Clear();CompatibleKeyEntry.Clear();RefreshKeyStatus();UpdateConnectionSummary();
   SettingsStatus.Text="Settings saved. Keys are protected for this Windows account.";return settings;
  }
  private void SaveSettings(object sender,RoutedEventArgs e){if(operation==null)try{SaveSettingsCore();}catch(Exception ex){Error(ex);}}
  private void RefreshKeyStatus() {
   RefreshSubdlKeyStatus();
+  RefreshOpenSubtitlesStatus();
   RefreshMetadataKeyStatus();
   try{
    OpenAiKeyStatus.Text=settingsStore.ReadKey("openai|https://api.openai.com/v1/responses") is null?"No key saved.":"A key is saved for OpenAI.";

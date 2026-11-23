@@ -93,7 +93,12 @@ public partial class MainWindow {
    SubtitleMatcher? subtitleMatcher=null;
    if(preferences.UseSubtitleMatching) {
     var cache=Path.Combine(Environment.GetEnvironmentVariable("SCOUT_SETTINGS")??Path.Combine(SettingsStore.DefaultDirectory,"UI-Trial"),"SubtitleCache");
-    subtitleMatcher=new(new SubdlReferences(cache,settingsStore.ReadKey(SubtitleCredentials.Subdl),run.SeriesIdentity?.Provider=="tmdb"?settingsStore.ReadKey("metadata|tmdb"):null),cache);
+    OpenSubtitlesCredentials? openCredentials=null;
+    try{openCredentials=OpenSubtitlesCredentials.Read(settingsStore);}
+    catch(Exception ex) when(ex is System.Security.Cryptography.CryptographicException or System.Text.Json.JsonException or IOException or InvalidDataException or ArgumentException or InvalidOperationException){progress.Report("OpenSubtitles credentials could not be read; using saved OpenSubtitles references only.");}
+    subtitleMatcher=new(new CombinedSubtitleReferences(
+     ("SubDL",new SubdlReferences(cache,settingsStore.ReadKey(SubtitleCredentials.Subdl),run.SeriesIdentity?.Provider=="tmdb"?settingsStore.ReadKey("metadata|tmdb"):null)),
+     ("OpenSubtitles",new OpenSubtitlesReferences(cache,openCredentials))),cache);
    }
    var pipeline=new MediaPipeline(matcher,subtitles:subtitleMatcher,speech:preferences.Speech.Enabled?runCoordinator.CoordinateSpeech(new SpeechTranscriber(preferences.Speech,preferences.ModelDirectory)):null);
    var executor=PipelineOverride;

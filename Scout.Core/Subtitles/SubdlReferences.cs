@@ -15,7 +15,7 @@ namespace Scout.Core.Subtitles;
 public sealed class SubdlReferences(string cacheRoot,string? apiKey,string? metadataKey=null,
  Func<HttpMessageHandler>? apiHandler=null,Func<HttpMessageHandler>? metadataHandler=null):ISubtitleReferenceSource {
  const string CacheVersion="subdl-references-v1";
- const string RetrievalPolicy="coverage-and-episode-fallback-v4";
+ const string RetrievalPolicy="normalized-series-and-episode-fallback-v5";
  public async Task<SubtitleReferenceSet> LoadAsync(SeriesIdentity series,IReadOnlyList<Episode> catalog,IProgress<string> progress,CancellationToken ct) {
   var gate=CacheGates.GetOrAdd(Path.GetFullPath(cacheRoot)+"|"+series.Key,_=>new(1,1));
   await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -51,10 +51,10 @@ public sealed class SubdlReferences(string cacheRoot,string? apiKey,string? meta
   }
   try {
    progress.Report("Verifying subtitle series identity with the configured metadata provider…");
-   var imdb=await ImdbAsync(series,ct);
+   var imdb=await SubtitleSeriesLookup.ImdbAsync(series,metadataKey,metadataHandler,ct);
    var found=await api.Titles(imdb,ct);
-   var choices=found.Array("results").Where(r=>r.Text("type")=="tv"&&r.Text("imdb_id")==imdb).GroupBy(r=>r?["sd_id"]?.ToString()).Where(g=>!string.IsNullOrWhiteSpace(g.Key)).ToArray();
-   if(choices.Length!=1)return Checked("Subtitle series identity is ambiguous; unresolved files remain available for review.");
+   var choices=found.Array("results").Where(r=>r.Text("type")=="tv"&&r.Text("imdb_id")==imdb).GroupBy(r=>SubdlIdentity.Normalize(r?["sd_id"])).Where(g=>g.Key!=null).ToArray();
+   if(choices.Length!=1||choices[0].Any(r=>!SubdlIdentity.Matches(r,choices[0].Key!,imdb,series)))return Checked("Subtitle series identity is ambiguous; unresolved files remain available for review.");
    var sdId=choices[0].Key!;
    var seasons=catalog.Select(e=>e.Season).Distinct().Order().ToArray();
    if(seasons.Length>30)return Checked("Series exceeds the automatic subtitle retrieval limit; unresolved files remain available for review.");
@@ -77,7 +77,7 @@ public sealed class SubdlReferences(string cacheRoot,string? apiKey,string? meta
     searches++;var search=await api.Subtitles(sdId,season,ct,episode);
     // Some endpoints broaden empty searches. Reject explicit mismatched series
     // results instead of trusting the request parameters to describe the response.
-    if(search.Array("results").Any(r=>r.Text("type","tv")!="tv"||r.Text("imdb_id",imdb)!=imdb||(r?["sd_id"]?.ToString()??sdId)!=sdId)) {
+    if(search.Array("results").Any(r=>!SubdlIdentity.Matches(r,sdId,imdb,series))) {
      complete=false;notes.Add("A subtitle search returned another series and was ignored.");return true;
     }
     var packs=new List<(Uri Url,JsonObject Row,string[] Files,int Titles)>();
@@ -185,23 +185,5 @@ public sealed class SubdlReferences(string cacheRoot,string? apiKey,string? meta
   note+=$" {mapped} of {catalog.Count} provider episodes have title-linked references. File counts do not establish provider episode coverage.";
   return note.Trim();
  }
- async Task<string> ImdbAsync(SeriesIdentity series,CancellationToken ct) {
-  using var http=new HttpClient(metadataHandler?.Invoke()??new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(45)};
-  if(series.Provider=="tmdb") {
-   if(string.IsNullOrWhiteSpace(metadataKey))throw new InvalidOperationException("Metadata credential unavailable.");
-   using var request=new HttpRequestMessage(HttpMethod.Get,$"https://api.themoviedb.org/3/tv/{series.Id}/external_ids");request.Headers.Authorization=new AuthenticationHeaderValue("Bearer",metadataKey);
-   using var response=await http.SendAsync(request,ct);response.EnsureSuccessStatusCode();var body=JsonNode.Parse(await response.Content.ReadAsStringAsync(ct))!;
-   if(body["id"]?.ToString()!=series.Id)throw new InvalidDataException("Metadata series mismatch.");return Imdb(body.Text("imdb_id"));
-  }
-  var url=new Uri(series.Provider=="tvdb"?$"https://api.tvmaze.com/lookup/shows?thetvdb={series.Id}":$"https://api.tvmaze.com/shows/{series.Id}");
-  using var lookup=await http.GetAsync(url,ct);JsonNode show;
-  if(lookup.StatusCode==HttpStatusCode.MovedPermanently) {
-   var target=new Uri(url,lookup.Headers.Location??throw new InvalidDataException("Missing metadata redirect."));
-   if(target.Scheme!="https"||target.Host!="api.tvmaze.com"||!target.IsDefaultPort||target.UserInfo!=""||target.Query!=""||target.Fragment!=""||!Regex.IsMatch(target.AbsolutePath,@"^/shows/[1-9]\d*$"))throw new InvalidDataException("Invalid metadata redirect.");
-   using var response=await http.GetAsync(target,ct);response.EnsureSuccessStatusCode();show=JsonNode.Parse(await response.Content.ReadAsStringAsync(ct))!;
-  }else {lookup.EnsureSuccessStatusCode();show=JsonNode.Parse(await lookup.Content.ReadAsStringAsync(ct))!;}
-  if((series.Provider=="tvdb"?show["externals"]?["thetvdb"]:show["id"])?.ToString()!=series.Id)throw new InvalidDataException("Subtitle external series identity mismatch.");
-  return Imdb(show["externals"].Text("imdb"));
- }
- static string Imdb(string value)=>Regex.IsMatch(value,@"^tt\d+$")?value:throw new InvalidDataException("No verified IMDb series identity.");
+
 }

@@ -27,7 +27,7 @@ public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cache
    candidates=ReferenceMatcher.Candidates(refs,common,ct);ct.ThrowIfCancellationRequested();
    referenceHash=CollectionResolver.Hash(JsonSerializer.Serialize(loaded.References.OrderBy(r=>r.Id),Data.Options));note=string.Join(" ",new[]{loaded.Note,validated.Note}.Where(n=>n.Length>0));scope=current;
   }
-  var cacheKey=CollectionResolver.Hash(JsonSerializer.Serialize(new{SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,multipartRevision=9,sourceName=sourceContext==null?null:Path.GetFileName(sourceContext.Name),referenceValidationRevision=ReferenceValidation.Revision,current,referenceHash,cues},Data.Options));
+  var cacheKey=CollectionResolver.Hash(JsonSerializer.Serialize(new{SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,multipartRevision=10,sourceName=sourceContext==null?null:Path.GetFileName(sourceContext.Name),referenceValidationRevision=ReferenceValidation.Revision,current,referenceHash,cues},Data.Options));
   var path=Path.Combine(cacheRoot,"decisions",cacheKey+".json");
   if(ScoutStorage.Exists(path))try {
    var saved=Data.Read(path);var savedResult=saved["result"] as JsonObject;
@@ -45,7 +45,7 @@ public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cache
   var details=JsonSerializer.SerializeToNode(new{version=SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,accepted=supported,provider=series.Provider,seriesId=series.Id,
    reviewResolutionIds=reviews.Where(r=>supported&&!r.Bool("undone")&&r?["subtitle_reference_review"] is {} review&&
     best!.Candidate.Link!.EvidenceReferences.Contains(review["reference"].Text("id"))).Select(r=>r.Text("id")).ToArray(),catalogHash=SubtitleResult.CatalogHash(catalog),dialogueHash=SubtitleResult.DialogueHash(cues),referenceHash,referenceFiles=candidates.Count(c=>c.Parts.Length==1),
-   sourceTitleEvidence=sourceEvidence,equivalentReferences=decision.EquivalentReferences,reason=decision.ProviderMapped&&!supported?"Reference coverage must be one to four consecutive episodes in one season.":decision.Reason,note,decision.Margin,selectedEpisodes=episodes,
+   mappingConflict=best?.Candidate.Parts.Any(p=>p.MappingBlocked)==true,sourceTitleEvidence=sourceEvidence,equivalentReferences=decision.EquivalentReferences,reason=decision.ProviderMapped&&!supported?"Reference coverage must be one to four consecutive episodes in one season.":decision.Reason,note,decision.Margin,selectedEpisodes=episodes,
    best=best==null?null:new{best.Candidate.Id,best.Candidate.Name,best.Candidate.Link,best.Overlap,best.OrderedParts,best.CompleteExtent,best.Parts,
     references=best.Candidate.Parts.Select(p=>new{p.Reference.Id,p.Reference.Name,p.Reference.Url,contentHash=ReviewedReferenceMapping.Digest(p.Reference.Index)})},
    alternatives=decision.Ranking.Skip(1).Take(3).Select(r=>new{r.Candidate.Name,r.Overlap.Score,episodeIds=r.Candidate.Link?.Episodes.Select(e=>e.Id)})},Data.Options)!.AsObject();

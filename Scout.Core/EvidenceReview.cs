@@ -71,7 +71,11 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
    if(row.Bool("claim_review_pending"))sections.Add(new("Focused review pending","Resume Scout to finish the saved individual claim checks. No assignment is accepted while this check is incomplete."));
    if(row.Text("claim_review_error")!="")sections.Add(new("Focused review error",row.Text("claim_review_error")));
    if(row.Text("issue_review_reason")!="")sections.Add(new("Automated issue review","Included because: "+row.Text("issue_review_reason").Replace('_',' ')+". The current outcome is shown above; incomplete or inconclusive checks remain held."));
+   if(row["title_candidate"] is {} titleHint)sections.Add(new("Episode-title candidate",titleHint.Text("source_name")+"\n"+
+    string.Join(" / ",titleHint.Array("episodes").Select(e=>e.Text("title")))+"\nThe filename proposes a candidate only; dialogue verification is required. AI-off runs retain this hint without calling a model."));
+   if(row["title_verification_attempt"] is {} titleAttempt)sections.Add(new("Title verification",titleAttempt.Text("reason")));
    var reasoning=row["reasoning"];
+   if(reasoning?["title_verification"]!=null)sections.Add(new("Focused guide check","The model checked the proposed guide statements against complete original dialogue, without seeing the filename or episode title. Whole-catalog identification was skipped; collection checks still apply."));
    if(reasoning?["grounded_verification"] is JsonObject auditScope&&auditScope.ContainsKey("full_dialogue")) {
     sections.Add(new("Dialogue examined",auditScope.Bool("full_dialogue")?"Complete original dialogue.":$"Selected original passages: {auditScope.Int("included_blocks")} of {auditScope.Int("total_blocks")} blocks. Unseen passages were not verified; this remains a model-supported suggestion."));
     if(auditScope.Text("fallback_reason")!="")sections.Add(new("Full-dialogue fallback",auditScope.Text("fallback_reason")));

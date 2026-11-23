@@ -303,6 +303,8 @@ SubtitleCoverageTests.Run(Test,temp);
 ReferenceValidationTests.Run(Test,temp);
 SubtitleIdentityTests.Run(Test,temp);
 SubtitleRetrievalTests.Run(Test,temp);
+TitleCandidateTests.Run(Test,temp);
+OpenSubtitlesTests.Run(Test,temp);
 ConcurrentScoutTests.Run(Test,temp);
 SubtitleNormalizationTests.Run(Test,temp);
 SubtitlePassReplayTests.Run(Test,temp);

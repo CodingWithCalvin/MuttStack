@@ -21,13 +21,36 @@ static class SubtitleRetrievalTests {
  }
  sealed class Fixture(string root,Func<Uri,HttpResponseMessage> respond) {
   public readonly List<Uri> Requests=[];public readonly Progress Logs=new();
+  public string Titles="""{"results":[{"sd_id":123,"imdb_id":"tt999","type":"tv"}]}""";
   public SubtitleReferenceSet Load(Episode[] guide)=>new SubdlReferences(root,"fake-retrieval-key","fake-metadata-token",
    ()=>new Response(r=>{var uri=r.RequestUri!;Requests.Add(uri);Check(uri.Host is "api.subdl.com" or "dl.subdl.com");Check(!uri.Query.Contains("fake-"));
-    if(uri.AbsolutePath.EndsWith("movies/search"))return Json("""{"results":[{"sd_id":123,"imdb_id":"tt999","type":"tv"}]}""");return respond(uri);}),
+    if(uri.AbsolutePath.EndsWith("movies/search"))return Json(Titles);return respond(uri);}),
    ()=>new Response(r=>{Check(r.RequestUri!.Host=="api.themoviedb.org");return Json("""{"id":123,"imdb_id":"tt999"}""");}))
    .LoadAsync(new("tmdb","123","Example"),guide,Logs,default).GetAwaiter().GetResult();
  }
  public static void Run(Action<string,Action> test,string temp) {
+  test("SubDL IDs normalize documented prefixed and numeric identities only",()=>{
+   foreach(var raw in new[]{"123","\"123\"","\"sd123\"","\"SD000123\"","\"  sd123  \""})Check(SubdlIdentity.Normalize(JsonNode.Parse(raw))=="123");
+   foreach(var raw in new[]{"null","0","-123","123.5","true","{}","[]","\"sd\"","\"sd123x\"","\"123 OR 1\"","\"000\""})Check(SubdlIdentity.Normalize(JsonNode.Parse(raw))==null);
+  });
+  foreach(var prefixedTitle in new[]{true,false})test($"SubDL title and subtitle IDs may use different representations (prefixed title={prefixedTitle})",()=>{
+   var f=new Fixture(Path.Combine(temp,"retrieval-prefixed-"+prefixedTitle),u=>{
+    if(u.Host=="dl.subdl.com")return Zip(("Example.S02E01.Silver.Comet.srt","first"));
+    Check(u.Query.Contains("sd_id=123&"));
+    return Json("{\"results\":[{\"sd_id\":"+(prefixedTitle?"123":"\"SD000123\"")+",\"imdb_id\":\"tt999\",\"tmdb_id\":123,\"type\":\"tv\"}],\"subtitles\":[{\"lang\":\"en\",\"url\":\"/subtitle/one.zip\",\"unpack_files\":[\"Example.S02E01.Silver.Comet.srt\"]}]}");
+   });
+   f.Titles="{\"results\":[{\"sd_id\":"+(prefixedTitle?"\"sd123\"":"123")+",\"imdb_id\":\"tt999\",\"type\":\"tv\"},{\"sd_id\":\"000123\",\"imdb_id\":\"tt999\",\"type\":\"tv\"}]}";
+   var set=f.Load([new(1,2,1,"Silver Comet")]);Check(set.References.Count==1&&!set.Note.Contains("another series")&&f.Requests.Count==3);
+  });
+  foreach(var identity in new[]{"\"sd_id\":\"sd124\"","\"sd_id\":\"bad123\"","\"sd_id\":123,\"imdb_id\":\"tt111\"","\"sd_id\":123,\"tmdb_id\":456","\"sd_id\":123,\"type\":\"movie\""})test("SubDL normalization retains identity rejection: "+identity,()=>{
+   var f=new Fixture(Path.Combine(temp,"retrieval-bad-"+CollectionResolver.Hash(identity)),u=>{Check(u.Host!="dl.subdl.com");return Json("{\"results\":[{"+identity+"}],\"subtitles\":[{\"url\":\"/subtitle/wrong.zip\"}]}");});
+   var set=f.Load([new(1,1,1,"Silver Comet")]);Check(set.References.Count==0&&set.Note.Contains("another series"));
+  });
+  test("SubDL search cannot normalize away a conflicting TMDB title identity",()=>{
+   var f=new Fixture(Path.Combine(temp,"retrieval-title-identity"),_=>throw new Exception("No subtitle request permitted"));
+   f.Titles="""{"results":[{"sd_id":"sd123","imdb_id":"tt999","tmdb_id":456,"type":"tv"}]}""";
+   Check(f.Load([new(1,1,1,"Silver Comet")]).References.Count==0&&f.Requests.Count==1);
+  });
   test("Empty English season results fall back to numbered individual episode releases",()=>{
    var cache=Path.Combine(temp,"retrieval-empty-season");Episode[] guide=[new(1,2,1,"Silver Comet"),new(2,2,2,"Golden River")];
    var f=new Fixture(cache,u=>{

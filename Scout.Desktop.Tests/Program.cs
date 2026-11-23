@@ -86,6 +86,7 @@ internal static class Program
             Assert(keyStatus.Text=="Key not configured"&&keyStore.ReadKey(SubtitleCredentials.Subdl)==null&&keyStore.ReadKey("metadata|tvdb")=="other-provider-key","Removal must affect only SubDL.");
             Assert(scoutsBefore==System.Text.Json.JsonSerializer.Serialize(store.ReadAll(includeArchived:true),Data.Options),"Saving or removing a subtitle key must not change Scouts.");
             Console.WriteLine("PASS SubDL key save, blank retention, replacement, reload and removal preserve Scout history and other credentials.");
+            OpenSubtitlesDesktopTests.Run(window,keyStore,store);
             var subtitleMatching=(CheckBox)window.FindName("SubtitleMatchingEntry");
             Assert(subtitleMatching.IsChecked==true,"Subtitle-first identification should be enabled by default.");
             subtitleMatching.IsChecked=false;

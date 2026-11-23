@@ -196,13 +196,23 @@
 <TextBlock Text="SubDL" FontSize="20" FontWeight="SemiBold"/>
 <CheckBox x:Name="SubtitleMatchingEntry" Content="Match subtitle dialogue before using AI" Margin="0,8,0,10"/>
 <TextBlock Text="Subtitle searches send series identifiers; dialogue comparison runs locally. AI fallback follows your Connection settings." Style="{StaticResource Subtitle}"/>
-<TextBlock Text="Identify episodes reuses saved dialogue and subtitle references, then uses AI for unresolved files. References and comparison results are cached in Scout's database. Saving a key alone does not start downloads." Style="{StaticResource Subtitle}"/>
+<TextBlock Text="Scout checks SubDL and OpenSubtitles before optional AI fallback. Saved references stay available when a provider is offline or reaches its quota. Saving credentials does not start downloads or change existing Scouts." Style="{StaticResource Subtitle}"/>
 <TextBlock Text="SubDL API key · leave blank to retain the saved key"/>
 <PasswordBox x:Name="SubdlKeyEntry" Padding="12,9" Margin="0,8,0,4" AutomationProperties.Name="SubDL API key"/>
 <TextBlock x:Name="SubdlKeyStatus" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,16"/>
 <WrapPanel><Button x:Name="SubdlSaveButton" Content="Save SubDL key" Click="SaveSubdlKey"/><Button x:Name="SubdlRemoveButton" Content="Remove SubDL key" Click="RemoveSubdlKey"/></WrapPanel>
 <TextBlock Text="Keys are encrypted for your Windows account. The field stays empty after saving; Key configured confirms that a key is stored. Saving this key does not change your Scouts." Style="{StaticResource Subtitle}"/>
 <TextBlock Text="Get a key at subdl.com/panel/api. SubDL account limits apply." Style="{StaticResource Subtitle}"/>
+<Separator Margin="0,16,0,16"/>
+<TextBlock Text="OpenSubtitles" FontSize="20" FontWeight="SemiBold"/>
+<TextBlock Text="API key · leave saved fields blank to retain them"/>
+<PasswordBox x:Name="OpenSubtitlesKeyEntry" Padding="12,9" Margin="0,8,0,8" AutomationProperties.Name="OpenSubtitles API key"/>
+<TextBlock Text="Account username · optional"/><TextBox x:Name="OpenSubtitlesUsernameEntry" AutomationProperties.Name="OpenSubtitles username"/>
+<TextBlock Text="Account password · optional"/><PasswordBox x:Name="OpenSubtitlesPasswordEntry" Padding="12,9" Margin="0,8,0,8" AutomationProperties.Name="OpenSubtitles password"/>
+<TextBlock x:Name="OpenSubtitlesKeyStatus" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,16"/>
+<WrapPanel><Button x:Name="OpenSubtitlesSaveButton" Content="Save OpenSubtitles credentials" Click="SaveOpenSubtitlesKey"/><Button x:Name="OpenSubtitlesRemoveLoginButton" Content="Remove account login" Click="RemoveOpenSubtitlesLogin"/><Button x:Name="OpenSubtitlesRemoveButton" Content="Remove OpenSubtitles credentials" Click="RemoveOpenSubtitlesKey"/></WrapPanel>
+<TextBlock Text="Create an API key in the API Consumers section of your opensubtitles.com profile. An optional account login uses your account's download allowance. Quotas apply; Scout caches references and shows when a limit prevents more downloads." Style="{StaticResource Subtitle}"/>
+<TextBlock Text="Credentials are encrypted for your Windows account. Fields clear after saving. Subtitle comparison stays local, and filenames alone never establish an episode match." Style="{StaticResource Subtitle}"/>
 </StackPanel></ScrollViewer></TabItem>
 <TabItem Header="Speech" Style="{StaticResource OutlinedTab}"><ScrollViewer Foreground="#F0F4FA" FontWeight="Normal" VerticalScrollBarVisibility="Auto"><StackPanel Margin="20">
 <TextBlock Text="Local speech recognition" FontSize="20" FontWeight="SemiBold"/>
