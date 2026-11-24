@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Tucker/ScoutOutbox.cs" Link="ScoutOutbox.cs"/>
+    <Compile Include="../../src/Tucker/AppStorage.cs" Link="AppStorage.cs"/>
+    <Compile Include="../../src/Tucker/RunPlanner.cs" Link="RunPlanner.cs"/>
+    <Compile Include="../../src/Tucker/RunNames.cs" Link="RunNames.cs"/>
+    <Compile Include="../../src/Tucker/FileNames.cs" Link="FileNames.cs"/>
+    <Compile Include="../../src/Tucker/RawRip.cs" Link="RawRip.cs"/>
+    <Compile Include="../../src/Tucker/Engine.cs" Link="Engine.cs"/>
+    <Compile Include="../../src/Tucker/Disc.cs" Link="Disc.cs"/>
+    <Compile Include="../../src/Tucker/RipQueue.cs" Link="RipQueue.cs"/>
+    <Compile Include="../../src/Tucker/Presets.cs" Link="Presets.cs"/>
+    <Compile Include="../../src/Tucker/QueueStore.cs" Link="QueueStore.cs"/>
+    <Compile Include="../../src/Tucker/Tvdb.cs" Link="Tvdb.cs"/>
+    <Compile Include="../../src/Tucker/FolderNames.cs" Link="FolderNames.cs"/>
+  <Compile Include="../../src/Tucker/DiscLabelHints.cs" Link="DiscLabelHints.cs"/><Compile Include="../../src/Tucker/DoggoDatabase.cs" Link="DoggoDatabase.cs"/><Compile Include="../../src/Tucker/QueueManager.cs" Link="QueueManager.cs"/><Compile Include="../../src/Tucker/Naming.cs" Link="Naming.cs"/></ItemGroup>
+<ItemGroup><ProjectReference Include="../../src/Doggo.Handoffs/Doggo.Handoffs.csproj"/></ItemGroup><ItemGroup><Compile Include="../../src/Tucker/MetadataSearch.cs" Link="MetadataSearch.cs"/></ItemGroup></Project>
+

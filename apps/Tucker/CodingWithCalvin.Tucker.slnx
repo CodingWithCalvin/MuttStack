@@ -1,0 +1,1 @@
+<Solution><Project Path="src/Tucker/Tucker.csproj"/><Project Path="tests/Tucker.Tests/Tucker.Tests.csproj"/><Project Path="tests/FakeCli/FakeCli.csproj"/><Project Path="tests/Tucker.Desktop.Tests/Tucker.Desktop.Tests.csproj"/></Solution>

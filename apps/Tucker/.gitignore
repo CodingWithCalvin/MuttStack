@@ -1,0 +1,10 @@
+artifacts/
+**/bin/
+**/obj/
+.vs/
+*.user
+
+# Signing keys are never source or release artifacts.
+*.pfx
+*.p12
+*.key
