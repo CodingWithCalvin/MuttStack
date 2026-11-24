@@ -1,0 +1,18 @@
+**/bin/
+**/obj/
+/artifacts/
+/app/
+/.vs/
+/.idea/
+/TestResults/
+*.user
+*.suo
+*.log
+*.dpapi
+.env
+.env.*
+
+# Signing keys are never source or release artifacts.
+*.pfx
+*.p12
+*.key
