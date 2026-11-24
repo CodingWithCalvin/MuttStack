@@ -28,9 +28,9 @@ static class SubtitleIdentityTests {
    Check(Match("weak",filename,[new(0,"unrelated dialogue with no distinctive sequences")]).Result==null);
    Check(Match("no-synopsis",filename,catalog:guide.Select(e=>e with{Overview=""}).ToArray()).Result==null);
    var noTitle=cues.Select(c=>c with{Text=c.Text.Replace("Moonlight rescue ","")}).ToList();
-   Check(Match("no-title-dialogue",filename,noTitle,[numbered with{Cues=noTitle}]).Result==null);
+   Check(Match("no-title-dialogue",filename,noTitle,[numbered with{Cues=noTitle}]).Result!=null);
    var openingOnly=noTitle.Select((c,i)=>i<3?c with{Text="Moonlight rescue "+c.Text}:c).ToList();
-   Check(Match("opening-only-title",filename,openingOnly,[numbered with{Cues=openingOnly}]).Result==null);
+   Check(Match("opening-only-title",filename,openingOnly,[numbered with{Cues=openingOnly}]).Result!=null);
   });
   test("Competing synopses and title duplicates prevent a filename from manufacturing identity",()=>{
    Check(Match("ambiguous-title",filename,catalog:[..guide,new(103,2,1,"Moonlight Rescue",guide[0].Overview)]).Result==null);

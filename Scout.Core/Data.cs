@@ -27,9 +27,12 @@ public sealed record Episode(int Id,int Season,int Number,string Title,string Ov
     public List<GuideReference>? References {get;init;}
     public EpisodeDescriptionSource? DescriptionSource {get;init;}
     public string? DescriptionIssue {get;init;}
+    public PreviousEpisodeDescription? OriginalDescription {get;init;}
+    public string? DescriptionValidationKey {get;init;}
     [JsonIgnore] public string Code=>$"S{Season:00}E{Number:00}";
 }
 public sealed record EpisodeDescriptionSource(string Provider,string SeriesId,string EpisodeId,string Url,string Method,DateTimeOffset RetrievedAt);
+public sealed record PreviousEpisodeDescription(string Overview,EpisodeDescriptionSource? Source);
 public sealed record GuideReference(string Overview);
 public sealed record Cue(double Start,string Text);
 public sealed record Block(int Index,int CueIndex,int EndCueIndex,double Start,string SourceText);
@@ -56,7 +59,7 @@ public sealed class RecordingGroup
     public string Code=>Combined?$"{Episodes[0].Code}-E{Episodes[^1].Number:00}":Episode?.Code ?? "—";
     public string Title=>NotProcessed?"No readable dialogue":Compilation!=null?"Play-all compilation":Combined?string.Join(" / ",Episodes.Select(e=>e.Title)):Split?$"{Episode!.Title} (Part {Part} of {PartCount})":Episode?.Title ?? (Feature?"Non-episode feature":"Unresolved");
     public string Category=>NotProcessed?"Not processed":Compilation!=null?"Compilation":Combined?"Combined episodes":Split?"Split episode":Episode is not null?"Episode":Feature?"Feature":"Unresolved";
-    public string DisplayStatus=>Status switch {"source_unavailable"=>"Source unavailable","overridden_conflict"=>"Held by override","stale_human_override"=>"Override expired",_ when HumanDecision!=null&&Episode!=null=>"Human override",_=>Category};
+    public string DisplayStatus=>Status switch {"source_unavailable"=>"Source unavailable","overridden_conflict"=>"Held by override","stale_human_override"=>"Override expired",_ when HumanDecision!=null&&Episode!=null=>"Human override",_ when Status=="unassigned"&&Episode==null&&!Feature&&Rows.Any(r=>r["subtitle_match"]!=null)=>Subtitles.SubtitleResult.UnresolvedStatus(Rows.First(r=>r["subtitle_match"]!=null)["subtitle_match"] as JsonObject),_=>Category};
     public int Copies=>Rows.Count;
     public string Detail {get {var review=EvidenceReview.Create(this);return review.Assessment+"\n"+review.Suggestion+"\n\n"+string.Join("\n\n",review.Sections.Select(s=>s.Heading+"\n"+s.Text));}}
 }

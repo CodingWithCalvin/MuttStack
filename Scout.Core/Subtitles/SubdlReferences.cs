@@ -52,7 +52,7 @@ public sealed class SubdlReferences(string cacheRoot,string? apiKey,string? meta
   try {
    progress.Report("Verifying subtitle series identity with the configured metadata provider…");
    var imdb=await SubtitleSeriesLookup.ImdbAsync(series,metadataKey,metadataHandler,ct);
-   var found=await api.Titles(imdb,ct);
+   var found=await SubtitleSearchCache.Get(root,$"subdl-title:{RetrievalPolicy}:{imdb}",()=>api.Titles(imdb,ct),r=>r["results"] is JsonArray rows&&rows.Count>0&&rows.All(x=>x.Text("type")=="tv"&&x.Text("imdb_id")==imdb&&SubdlIdentity.Normalize(x?["sd_id"])!=null&&SubdlIdentity.Matches(x,SubdlIdentity.Normalize(x?["sd_id"])!,imdb,series)),progress,ct);
    var choices=found.Array("results").Where(r=>r.Text("type")=="tv"&&r.Text("imdb_id")==imdb).GroupBy(r=>SubdlIdentity.Normalize(r?["sd_id"])).Where(g=>g.Key!=null).ToArray();
    if(choices.Length!=1||choices[0].Any(r=>!SubdlIdentity.Matches(r,choices[0].Key!,imdb,series)))return Checked("Subtitle series identity is ambiguous; unresolved files remain available for review.");
    var sdId=choices[0].Key!;
@@ -74,7 +74,8 @@ public sealed class SubdlReferences(string cacheRoot,string? apiKey,string? meta
    async Task<bool> SearchAndImport(int season,int? episode) {
     if(searches>=60||downloads>=48){complete=false;if(!notes.Any(n=>n.Contains("retrieval limit")))notes.Add("The bounded subtitle retrieval limit was reached; missing coverage remains visible.");return false;}
     if(episode.HasValue)progress.Report($"Searching English subtitle releases for S{season:00}E{episode.Value:00} reference coverage…");
-    searches++;var search=await api.Subtitles(sdId,season,ct,episode);
+    var search=await SubtitleSearchCache.Get(root,$"subdl:{RetrievalPolicy}:{sdId}:{season}:{episode}",()=>{searches++;return api.Subtitles(sdId,season,ct,episode);},
+     r=>r["subtitles"] is JsonArray&&(r["results"]==null||r["results"] is JsonArray)&&r.Array("results").All(x=>SubdlIdentity.Matches(x,sdId,imdb,series)),progress,ct);
     // Some endpoints broaden empty searches. Reject explicit mismatched series
     // results instead of trusting the request parameters to describe the response.
     if(search.Array("results").Any(r=>!SubdlIdentity.Matches(r,sdId,imdb,series))) {

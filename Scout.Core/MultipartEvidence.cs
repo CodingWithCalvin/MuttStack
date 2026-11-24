@@ -12,6 +12,10 @@ public static class MultipartEvidence {
    var candidates=row.Array("candidates");if(candidates.Count is <2 or >EpisodeRange.Maximum)return false;
    var episodes=candidates.Select(c=>Data.Episode(c!["episode"]!)).ToList();
    var reasoning=row["reasoning"]!.DeepClone().AsObject();
+   if(reasoning["shared_guide_audit"] is JsonObject shared) {
+    var blocks=DialogueMatcher.Blocks(Cues(row));var proof=SharedGuideGrounding.Expand(shared,DialogueEvidence.Spans(blocks),blocks,episodes);
+    if(!proof.Array("matches").Select(m=>m.Int("episode_id")).SequenceEqual(episodes.Select(e=>e.Id)))return false;
+   }
    foreach(var m in reasoning.Array("matches"))m!["episode_title"]=episodes.Single(e=>e.Id==m.Int("episode_id")).Title;
    SelectedChecks(reasoning,episodes);
    DialogueMatcher.Validate(reasoning,DialogueMatcher.Blocks(Cues(row)),episodes,true);

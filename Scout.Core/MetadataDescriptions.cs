@@ -16,7 +16,10 @@ public sealed partial class MetadataCatalog
     {
         if(!long.TryParse(seriesId,out var number)||number<=0)throw new ArgumentException("Invalid series ID.");
         var result=episodes.ToList();
-        if(result.All(e=>!string.IsNullOrWhiteSpace(e.Overview)))return result;
+        string validationKey=DescriptionRepair.ValidationKey(episodes);
+        var suspects=provider is "tvdb" or "tmdb"?episodes.Where(e=>DescriptionRepair.Suspect(e,episodes)&&
+            e.DescriptionValidationKey!=validationKey).Select(e=>e.Id).ToHashSet():[];
+        if(result.All(e=>!string.IsNullOrWhiteSpace(e.Overview))&&suspects.Count==0)return result;
         // Fill only blank descriptions. The selected provider's IDs, titles and
         // numbering remain intact, including when a supplemental provider differs.
         for(int i=0;i<result.Count;i++) {
@@ -29,11 +32,19 @@ public sealed partial class MetadataCatalog
                 result[i]=episode with {DescriptionIssue=$"{provider.ToUpperInvariant()} episode details were unavailable or did not match the saved episode."};
             }
         }
-        if(result.Any(e=>string.IsNullOrWhiteSpace(e.Overview))&&provider is "tvdb" or "tmdb") {
+        if((result.Any(e=>string.IsNullOrWhiteSpace(e.Overview))||suspects.Count>0)&&provider is "tvdb" or "tmdb") {
             try {
                 var supplemental=await TvmazeSupplement(seriesId,ct);
                 if(supplemental!=null)for(int i=0;i<result.Count;i++) {
-                    var episode=result[i];if(!string.IsNullOrWhiteSpace(episode.Overview))continue;
+                    var episode=result[i];
+                    if(!string.IsNullOrWhiteSpace(episode.Overview)) {
+                        if(!suspects.Contains(episode.Id))continue;
+                        var replacement=DescriptionRepair.Replacement(episode,episodes,supplemental.Value.Episodes);
+                        if(replacement!=null)result[i]=Recovered(episode,replacement.Overview,"tvmaze",supplemental.Value.Id,replacement.Id,"verified-series-unique-title-misplaced-description") with {
+                            OriginalDescription=new(episode.Overview,episode.DescriptionSource),DescriptionValidationKey=validationKey};
+                        else result[i]=episode with {DescriptionValidationKey=validationKey};
+                        continue;
+                    }
                     var match=DescriptionMapping.Find(episode,episodes,supplemental.Value.Episodes);
                     if(match!=null&&!string.IsNullOrWhiteSpace(match.Overview))
                         result[i]=Recovered(episode,match.Overview,"tvmaze",supplemental.Value.Id,match.Id,"external-series-id-and-aligned-episode");
@@ -43,6 +54,8 @@ public sealed partial class MetadataCatalog
                     result[i]=result[i] with {DescriptionIssue="Supplemental episode descriptions were unavailable or their series identity could not be verified."};
             }
         }
+        var updatedValidationKey=DescriptionRepair.ValidationKey(result);
+        result=result.Select(e=>e.DescriptionValidationKey==validationKey?e with {DescriptionValidationKey=updatedValidationKey}:e).ToList();
         return result.Select(e=>string.IsNullOrWhiteSpace(e.Overview)
             ?e with {DescriptionIssue=e.DescriptionIssue??"No description was found with a verified series and episode mapping. This episode cannot be accepted without guide evidence."}:e).ToList();
     }
@@ -111,7 +124,7 @@ public sealed partial class MetadataCatalog
 
 public static class DescriptionMapping
 {
-    static string Key(string title)=>Regex.Replace(title.ToLowerInvariant(),@"[^\p{L}\p{Nd}]","");
+    internal static string Key(string title)=>Regex.Replace(title.ToLowerInvariant(),@"[^\p{L}\p{Nd}]","");
     internal static (string Title,int Part)? Part(string title) {
         var m=Regex.Match(title,@"^(.*?)\s*(?:\((?:part\s+)?(\d+)\)|[-:]?\s+part\s+(\d+))\s*$",RegexOptions.IgnoreCase);
         return m.Success&&int.TryParse(m.Groups[2].Success?m.Groups[2].Value:m.Groups[3].Value,out var number)&&number>0?(Key(m.Groups[1].Value),number):null;

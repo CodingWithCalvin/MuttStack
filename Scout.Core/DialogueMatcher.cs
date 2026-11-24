@@ -12,7 +12,7 @@ public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? 
     public string CacheScope=>transport.CacheScope;
     public UsageSnapshot Usage=>transport.Usage;
     public Uri ValidateEndpoint(string endpoint)=>transport.ValidateEndpoint(endpoint);
-    public const string RequestRevision="compact-evidence-retrieval-v23-ranges";
+    public const string RequestRevision="compact-evidence-retrieval-v24-shared-guides";
     public const string Version="verified-dialogue-v7-multipart1";
     private static string Asset(string name) {
         using var stream=typeof(DialogueMatcher).Assembly.GetManifestResourceStream("Scout.Core.Assets."+name)??throw new InvalidOperationException("Missing matcher asset.");

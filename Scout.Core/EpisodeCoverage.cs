@@ -16,8 +16,20 @@ public static class EpisodeCoverage
         if(episodes.Count<2)return false;
         var ordered=episodes.OrderBy(e=>e.Number).ToArray();
         if(!EpisodeRange.Valid(ordered))return false;
-        var first=DescriptionMapping.Part(ordered[0].Title);
-        return first is {} a && a.Title.Length>0 && ordered.Select((e,i)=>(Part:DescriptionMapping.Part(e.Title),Index:i))
+        var first=DescriptionMapping.Part(ordered[0].Title)??(DescriptionMapping.Key(ordered[0].Title),1);
+        return first is {} a && a.Title.Length>0 && ordered.Select((e,i)=>(Part:i==0?first:DescriptionMapping.Part(e.Title),Index:i))
             .All(p=>p.Part is {} part && part.Title==a.Title && part.Part==a.Part+p.Index);
+    }
+    public static int PartNumber(Episode episode)=>DescriptionMapping.Part(episode.Title)?.Part??1;
+    public static bool HasSharedDescription(IReadOnlyList<Episode> episodes)=>AreNumberedParts(episodes)&&
+        PartNumber(episodes.OrderBy(e=>e.Number).First())==1&&
+        episodes.All(e=>!string.IsNullOrWhiteSpace(e.Overview))&&episodes.Select(e=>System.Text.RegularExpressions.Regex.Replace(e.Overview.Trim(),@"\s+"," ")).Distinct(StringComparer.OrdinalIgnoreCase).Count()==1;
+    public static IReadOnlyList<Episode> SharedGroup(IReadOnlyList<Episode> proposed,IReadOnlyList<Episode> catalog) {
+        if(proposed.Count==0)return proposed;
+        string Base(Episode e)=>DescriptionMapping.Part(e.Title)?.Title??DescriptionMapping.Key(e.Title);
+        var first=proposed[0];
+        if(proposed.Any(e=>e.Season!=first.Season||Base(e)!=Base(first)))return proposed;
+        var group=catalog.Where(e=>e.Season==first.Season&&Base(e)==Base(first)).OrderBy(e=>e.Number).ToArray();
+        return HasSharedDescription(group)&&EpisodeRange.Valid(group)?group:proposed;
     }
 }

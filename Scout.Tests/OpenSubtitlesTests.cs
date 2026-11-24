@@ -123,9 +123,11 @@ static class OpenSubtitlesTests {
   test("OpenSubtitles refreshes invalid cache identity and retains cached dialogue during a malformed refresh",()=>{
    var root=Path.Combine(temp,"open-invalid-cache");var f=new Fixture(root);Check(f.Load().References.Count==1);
    var path=Directory.EnumerateFiles(root,"manifest.json",SearchOption.AllDirectories).Single();var saved=Data.Read(path);saved["series"]!["id"]="456";Data.Save(path,saved);
-   Check(f.Load().References.Count==1&&f.Requests.Count==6);
-   saved=Data.Read(path);saved["complete"]=false;Data.Save(path,saved);f.Search=_=>new JsonObject{["data"]=null};
-   var set=f.Load();Check(set.References.Count==1&&set.Note.Contains("unavailable")&&f.Requests.Count==7);
+   Check(f.Load().References.Count==1&&f.Requests.Count==5);
+   saved=Data.Read(path);saved["complete"]=false;Data.Save(path,saved);
+   foreach(var search in Directory.EnumerateFiles(root,"*.json",SearchOption.AllDirectories).Where(p=>p.Contains("searches-v1"))){var entry=Data.Read(search);entry["updated"]=DateTimeOffset.UtcNow.AddDays(-2).ToString("O");Data.Save(search,entry);}
+   f.Search=_=>new JsonObject{["data"]=null};
+   var set=f.Load();Check(set.References.Count==1&&set.Note.Contains("unavailable")&&f.Requests.Count==6);
   });
   test("Provider failure leaves the other provider usable and duplicate/conflicting identities retain their safety checks",()=>{
    var cues=Cues("same");SubtitleReference Ref(string id,string title)=>new(id,$"Example.S02E07.{title}.srt","https://www.opensubtitles.com/en/subtitles/1",id,2,cues);

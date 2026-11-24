@@ -15,6 +15,36 @@ static class DescriptionTests
     static readonly Episode[] Parts=[new(11,1,1,"The Crossing (1)","The crew begins a difficult journey."),new(12,1,2,"The Crossing (2)")];
     const string Supplement="""[{"id":101,"season":1,"number":1,"name":"The Crossing","summary":"The crew begins a difficult journey."},{"id":102,"season":1,"number":2,"name":"The Crossing","summary":"<p>The crew frees a captured passenger and reaches the destination.</p>"}]""";
     public static void Run(Action<string,Action> test,string root) {
+        const string wrong="A light thief leaves the city dark. The rescue team installs special lights to track the thief and restore the missing lights.";
+        const string correct="The racers discover a medieval kingdom and compete in a royal tournament.";
+        Episode[] mixed=[new(21,2,7,"Royal Riders",wrong),new(34,3,4,"Light Riders",wrong)];
+        const string fixedGuide="""[{"id":201,"season":2,"number":6,"name":"Royal Riders","summary":"The racers discover a medieval kingdom and compete in a royal tournament."},{"id":202,"season":3,"number":4,"name":"Light Riders","summary":"A light thief leaves the city dark. The rescue team installs special lights to track the thief and restore the missing lights."}]""";
+        test("Misplaced nonempty summaries recover by verified series and unique title without renumbering",()=>{
+            using var handler=new Handler(r=>{
+                if(r.RequestUri!.Host=="api.themoviedb.org") {Check(r.Headers.Authorization?.Parameter=="fixture");return Json("""{"id":70,"imdb_id":"tt1234567"}""");}
+                Check(r.RequestUri.Host=="api.tvmaze.com"&&r.Headers.Authorization==null);
+                return r.RequestUri.AbsolutePath=="/lookup/shows"?Json("""{"id":9,"externals":{"imdb":"tt1234567"}}"""):Json(fixedGuide);
+            });using var http=new HttpClient(handler);var catalog=new MetadataCatalog(http,"tmdb","fixture");
+            var result=catalog.CompleteDescriptionsAsync("70",mixed,default).GetAwaiter().GetResult();
+            Check(result[0].Overview==correct&&result[0].Id==21&&result[0].Code=="S02E07"&&result[0].Title=="Royal Riders");
+            Check(result[0].OriginalDescription?.Overview==wrong&&result[0].DescriptionSource is {Provider:"tvmaze",EpisodeId:"201"});
+            Check(result[1].Overview==wrong&&result[1].OriginalDescription==null);
+            int before=handler.Calls;catalog.CompleteDescriptionsAsync("70",result,default).GetAwaiter().GetResult();Check(handler.Calls==before);
+        });
+        test("Supplemental description repair rejects ambiguous titles and weak disagreements",()=>{
+            Episode[] supplemental=[new(201,2,6,"Royal Riders",correct),new(202,3,4,"Light Riders",wrong)];
+            Check(DescriptionRepair.Replacement(mixed[0],mixed,supplemental)?.Id==201);
+            Check(DescriptionRepair.Replacement(mixed[0],mixed,[..supplemental,supplemental[0] with{Id=203}])==null);
+            Check(DescriptionRepair.Replacement(mixed[0],[..mixed,mixed[0] with{Id=23}],supplemental)==null);
+            Check(DescriptionRepair.Replacement(mixed[0],mixed,[supplemental[0] with{Overview=wrong},supplemental[1]])==null);
+            Check(DescriptionRepair.Replacement(mixed[0],mixed,[supplemental[0],supplemental[1] with{Overview="An unrelated adventure."}])==null);
+            Check(!DescriptionRepair.Suspect(mixed[0] with{Title="Journey (1)"},[mixed[0] with{Title="Journey (1)"},mixed[1] with{Season=2,Number=8,Title="Journey (2)"}]));
+        });
+        foreach(bool unavailable in new[]{false,true})test("Failed or unverified metadata leaves nonempty guides unchanged: "+unavailable,()=>{
+            using var http=new HttpClient(new Handler(r=>r.RequestUri!.Host=="api.themoviedb.org"?Json("""{"id":70,"imdb_id":"tt1234567"}"""):
+                unavailable?new(HttpStatusCode.ServiceUnavailable):Json("""{"id":9,"externals":{"imdb":"tt9999999"}}""")));
+            var result=new MetadataCatalog(http,"tmdb","fixture").CompleteDescriptionsAsync("70",mixed,default).GetAwaiter().GetResult();Check(result.SequenceEqual(mixed));
+        });
         test("Missing descriptions use provider details and persist their provenance",()=>{
             using var handler=new Handler(r=>r.RequestUri!.AbsolutePath.EndsWith("login")?Json("""{"data":{"token":"secret"}}"""):
                 Json("""{"data":{"id":12,"seriesId":70,"overview":"","translations":{"overviewTranslations":[{"language":"eng","overview":"The crew completes its journey."}]}}}"""));

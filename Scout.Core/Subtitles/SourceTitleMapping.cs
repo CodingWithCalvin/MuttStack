@@ -9,6 +9,10 @@ internal static class SourceTitleMapping {
  // It needs both a complete reference match and distinctive synopsis support.
  public static (ProviderLink? Link,SourceTitleEvidence? Evidence) Find(SubtitleSourceContext? source,IReadOnlyList<Cue> cues,
   IReadOnlyList<Episode> catalog,SubtitleDecision decision) {
+  var title=FindTitle(source,cues,catalog,decision);
+  return title.Link!=null?title:SynopsisMapping.Find(source,cues,catalog,decision);
+ }
+ static (ProviderLink? Link,SourceTitleEvidence? Evidence) FindTitle(SubtitleSourceContext? source,IReadOnlyList<Cue> cues,IReadOnlyList<Episode> catalog,SubtitleDecision decision) {
   var best=decision.Best;
   if(source==null||!decision.TextSupported||best==null||best.Candidate.Link!=null||best.Candidate.Parts.Any(p=>p.MappingBlocked))return (null,null);
   var name=Path.GetFileName(source.Name);
@@ -78,6 +82,6 @@ internal static class SourceTitleMapping {
   if(word.Length>3&&word.EndsWith('s')&&!word.EndsWith("ss"))return word[..^1];
   return word;
  }
- static HashSet<string> Terms(string text)=>Regex.Matches(text.ToLowerInvariant(),@"[a-z]{3,}").Select(m=>m.Value)
+ internal static HashSet<string> Terms(string text)=>Regex.Matches(text.ToLowerInvariant(),@"[a-z]{3,}").Select(m=>m.Value)
   .Where(w=>!Stop.Contains(w)).Select(Stem).Where(w=>w.Length>=3&&!Stop.Contains(w)).ToHashSet();
 }

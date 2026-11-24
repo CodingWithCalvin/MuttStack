@@ -7,7 +7,8 @@ public sealed partial class DialogueMatcher
     public async Task<JsonObject> VerifySavedProposalAsync(IReadOnlyList<Cue> cues,IReadOnlyList<Episode> catalog,JsonObject proposal,string model,string endpoint,CancellationToken ct=default)
     {
         ValidateEndpoint(endpoint);if(cues.Count==0)throw new InvalidDataException("No original dialogue to audit.");
-        if(CompactEvidence)return await AuditSpansAsync(cues,GroundedVerification.Proposed(proposal,catalog),model,endpoint,ct);
+        var proposed=EpisodeCoverage.SharedGroup(GroundedVerification.Proposed(proposal,catalog),catalog);
+        if(CompactEvidence||EpisodeCoverage.HasSharedDescription(proposed))return await AuditSpansAsync(cues,proposed,model,endpoint,ct);
         var episodes=GroundedVerification.Proposed(proposal,catalog);var blocks=Blocks(cues);
         var schema=JsonNode.Parse(Asset("grounded-schema.json"))!.AsObject();
         schema["properties"]!["candidates"]!["minItems"]=episodes.Count;schema["properties"]!["candidates"]!["maxItems"]=episodes.Count;
@@ -18,7 +19,7 @@ public sealed partial class DialogueMatcher
         // Keep identity-bearing titles/numbers hidden while retaining the provider's
         // explicit installment structure. This is metadata, never proof of coverage.
         source["catalog_relationship"]=EpisodeCoverage.AreNumberedParts(episodes)
-            ?new JsonObject{["kind"]="numbered_parts",["members"]=JsonSerializer.SerializeToNode(episodes.Select((e,i)=>new{candidate=i,part=DescriptionMapping.Part(e.Title)!.Value.Part}))}
+            ?new JsonObject{["kind"]="numbered_parts",["members"]=JsonSerializer.SerializeToNode(episodes.Select((e,i)=>new{candidate=i,part=EpisodeCoverage.PartNumber(e)}))}
             :new JsonObject{["kind"]="not_established"};
         var audits=new JsonArray();var results=new List<JsonObject>();
         try {for(int pass=0;pass<2;pass++) {

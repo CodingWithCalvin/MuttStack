@@ -223,7 +223,7 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
                         SubtitleResult.Apply(row,episodes,attempt);
                         if(attempt.Result!=null&&SubtitleResult.Valid(row,episodes,series)) {
                             result=attempt.Result;progress.Report("Subtitle dialogue supports "+string.Join(" / ",attempt.Result.Array("matches").Select(m=>{var e=episodes.Single(e=>e.Id==m.Int("episode_id"));return e.Code+" — "+e.Title;}))+"; verifying source file.");
-                        }else progress.Report("Subtitle match unresolved: "+SubtitleResult.FallbackSummary(attempt.Details)+
+                        }else progress.Report(SubtitleResult.FallbackSummary(attempt.Details)+
                             (!settings.UseAiFallback?" Left unresolved for later; AI fallback is off.":subtitlePass?" Deferring AI until the subtitle pass is complete.":" Using AI with the saved dialogue."));
                     }catch(OperationCanceledException) when(ct.IsCancellationRequested){throw;}
                     catch(Exception ex) when(ex is IOException or InvalidDataException or HttpRequestException or InvalidOperationException or ArgumentException or System.Text.Json.JsonException or OperationCanceledException) {
@@ -310,7 +310,7 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
             }
             catch(OperationCanceledException){throw;}
             catch(UsageLimitException){throw;}
-            catch(Exception ex) {if(ex is ModelRequestTimeoutException timeout){row["error_code"]="model_timeout";row["timeout_seconds"]=timeout.TimeoutSeconds;}if(ex.Data[AssignmentValidation.ReasonKey] is string issue)row["assignment_issue"]=issue;if(ex.Data["context_recovery"] is string contextRecovery)row["context_recovery_attempts"]=JsonNode.Parse(contextRecovery);if(ex.Data["model_attempts"] is string attempts)row["model_attempts"]=JsonNode.Parse(attempts);row["error"]=ex.Message;row["status"]="error";row["candidates"]=new JsonArray();progress.Report("Held for review: "+ex.Message);}
+            catch(Exception ex) {if(ex is ModelRequestTimeoutException timeout){row["error_code"]="model_timeout";row["timeout_seconds"]=timeout.TimeoutSeconds;}if(ex.Data[AssignmentValidation.ReasonKey] is string issue)row["assignment_issue"]=issue;if(ex.Data["context_recovery"] is string contextRecovery)row["context_recovery_attempts"]=JsonNode.Parse(contextRecovery);if(ex.Data["model_attempts"] is string attempts)row["model_attempts"]=JsonNode.Parse(attempts);if(ex.Data["model_candidate_ids"] is string candidateIds)row["model_candidate_ids"]=JsonNode.Parse(candidateIds);row["error"]=ex.Message;row["status"]="error";row["candidates"]=new JsonArray();progress.Report("Held for review: "+ex.Message);}
             SaveRow(row);
             ReportCandidate(row,progress);
             pause?.Checkpoint();

@@ -7,6 +7,7 @@ namespace Scout.Core.Subtitles;
 
 internal sealed class OpenSubtitlesAccessException(string message,HttpStatusCode? status=null,DateTimeOffset? retryAfter=null):IOException(message) {
  public HttpStatusCode? Status {get;}=status;
+ public bool Transient=>Status is null or HttpStatusCode.RequestTimeout or HttpStatusCode.InternalServerError or HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout;
  public DateTimeOffset? RetryAfter {get;}=retryAfter;
 }
 internal sealed class OpenSubtitlesApi:IDisposable {
@@ -14,18 +15,21 @@ internal sealed class OpenSubtitlesApi:IDisposable {
  static readonly SemaphoreSlim RateGate=new(1,1);static DateTimeOffset nextRequest=DateTimeOffset.MinValue,nextLogin=DateTimeOffset.MinValue;
  public int? Remaining {get;private set;}
  public DateTimeOffset? ResetAt {get;private set;}
- public OpenSubtitlesApi(OpenSubtitlesCredentials credentials,HttpMessageHandler? handler=null) {
+ readonly IProgress<string>? progress;readonly Func<TimeSpan,CancellationToken,Task> wait;
+ public bool Ready=>loggedIn;
+ public OpenSubtitlesApi(OpenSubtitlesCredentials credentials,HttpMessageHandler? handler=null,IProgress<string>? progress=null,Func<TimeSpan,CancellationToken,Task>? wait=null) {
+  this.progress=progress;this.wait=wait??((delay,ct)=>Task.Delay(delay,ct));
   credentials.Validate();this.credentials=credentials;
   http=new(handler??new HttpClientHandler{AllowAutoRedirect=false,AutomaticDecompression=DecompressionMethods.All}){Timeout=TimeSpan.FromSeconds(45)};
  }
  async Task Login(CancellationToken ct) {
-  if(loggedIn)return;loggedIn=true;
-  if(credentials.Username.Length==0)return;
+  if(loggedIn)return;
+  if(credentials.Username.Length==0){loggedIn=true;return;}
   var result=await Json(HttpMethod.Post,"login",new JsonObject{["username"]=credentials.Username,["password"]=credentials.Password},ct);
   var selected=result.Text("base_url","api.opensubtitles.com");
   if(selected is not ("api.opensubtitles.com" or "vip-api.opensubtitles.com"))throw new InvalidDataException("OpenSubtitles returned an untrusted API host.");
   var value=result.Text("token");if(string.IsNullOrWhiteSpace(value)||value.Length>8192||value.Any(char.IsWhiteSpace)||value.Any(char.IsControl))throw new InvalidDataException("OpenSubtitles login returned no usable token.");
-  host=selected;token=value;
+  host=selected;token=value;loggedIn=true;
  }
  public async Task<JsonObject> Search(string parentParameter,string parentId,int season,int page,CancellationToken ct) {
   await Login(ct);
@@ -58,6 +62,20 @@ internal sealed class OpenSubtitlesApi:IDisposable {
    throw new InvalidDataException("OpenSubtitles returned an untrusted address.");
  }
  async Task<byte[]> Send(HttpMethod method,Uri uri,JsonObject? body,bool api,int maximum,CancellationToken ct) {
+  for(int attempt=0;;attempt++) {
+   ct.ThrowIfCancellationRequested();
+   try{return await SendOnce(method,uri,body,api,maximum,ct);}
+   catch(OpenSubtitlesAccessException ex) when(method==HttpMethod.Get&&ex.Transient&&attempt<2) {
+    var delay=ex.RetryAfter is {} retry?retry-DateTimeOffset.UtcNow:TimeSpan.FromSeconds(1<<attempt);
+    // Do not retry before a long server-requested pause, or retry quota/auth failures.
+    if(delay>TimeSpan.FromSeconds(10))throw;
+    if(delay<TimeSpan.Zero)delay=TimeSpan.Zero;
+    progress?.Report($"OpenSubtitles temporarily unavailable; retrying read request ({attempt+2}/3)…");
+    await wait(delay,ct);
+   }
+  }
+ }
+ async Task<byte[]> SendOnce(HttpMethod method,Uri uri,JsonObject? body,bool api,int maximum,CancellationToken ct) {
   try {
    for(int redirect=0;redirect<3;redirect++) {
     Validate(uri,api);
@@ -91,7 +109,8 @@ internal sealed class OpenSubtitlesApi:IDisposable {
     return output.ToArray();
    }
    throw new OpenSubtitlesAccessException("OpenSubtitles redirected too many times.");
-  }catch(HttpRequestException){throw new OpenSubtitlesAccessException("OpenSubtitles could not be reached; saved references remain available.");}
+  }catch(OperationCanceledException) when(!ct.IsCancellationRequested){throw new OpenSubtitlesAccessException("OpenSubtitles request timed out; saved references remain available.");}
+  catch(HttpRequestException){throw new OpenSubtitlesAccessException("OpenSubtitles could not be reached; saved references remain available.");}
  }
  public void Dispose()=>http.Dispose();
 }

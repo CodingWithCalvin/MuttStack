@@ -27,17 +27,17 @@ public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cache
    candidates=ReferenceMatcher.Candidates(refs,common,ct);ct.ThrowIfCancellationRequested();
    referenceHash=CollectionResolver.Hash(JsonSerializer.Serialize(loaded.References.OrderBy(r=>r.Id),Data.Options));note=string.Join(" ",new[]{loaded.Note,validated.Note}.Where(n=>n.Length>0));scope=current;
   }
-  var cacheKey=CollectionResolver.Hash(JsonSerializer.Serialize(new{SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,multipartRevision=10,sourceName=sourceContext==null?null:Path.GetFileName(sourceContext.Name),referenceValidationRevision=ReferenceValidation.Revision,current,referenceHash,cues},Data.Options));
+  var cacheKey=CollectionResolver.Hash(JsonSerializer.Serialize(new{SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,multipartRevision=11,sourceName=sourceContext==null?null:Path.GetFileName(sourceContext.Name),referenceValidationRevision=ReferenceValidation.Revision,current,referenceHash,cues},Data.Options));
   var path=Path.Combine(cacheRoot,"decisions",cacheKey+".json");
   if(ScoutStorage.Exists(path))try {
    var saved=Data.Read(path);var savedResult=saved["result"] as JsonObject;
    var attempt=new SubtitleAttempt(saved["details"]!.AsObject(),savedResult);
-   if(savedResult==null||SubtitleResult.Valid(SubtitleResult.Row(cues,catalog,attempt),catalog,series)) {progress.Report("Reusing exact-input subtitle comparison.");return attempt;}
+   if(savedResult==null||SubtitleResult.Valid(SubtitleResult.Row(cues,catalog,attempt),catalog,series)) {progress.Report("Reusing exact-input subtitle comparison.");attempt.Details["note"]=note;return attempt;}
   }catch(Exception ex) when(ex is IOException or InvalidDataException or JsonException or InvalidOperationException or ArgumentException){/* Recalculate invalid/stale cached decisions. */}
   progress.Report("Comparing saved dialogue with subtitle references…");
   var index=TranscriptComparison.Index(cues);var decision=ReferenceMatcher.Match(index,candidates,common,ct);ct.ThrowIfCancellationRequested();
   var (sourceLink,sourceEvidence)=SourceTitleMapping.Find(sourceContext,cues,catalog,decision);
-  if(sourceLink!=null)decision=decision with{ProviderMapped=true,Best=decision.Best! with{Candidate=decision.Best.Candidate with{Link=sourceLink}},Reason="Unique source title, repeated title dialogue, distinctive synopsis terms and complete subtitle correspondence support the provider mapping."};
+  if(sourceLink!=null)decision=decision with{ProviderMapped=true,Best=decision.Best! with{Candidate=decision.Best.Candidate with{Link=sourceLink}},Reason=sourceLink.Method=="source-title-with-distinctive-dialogue-plot"?"Complete subtitle correspondence and distinctive plot details independently support the TMDB/catalog identity; the source title agrees.":"Unique source title, repeated title dialogue, distinctive synopsis terms and complete subtitle correspondence support the provider mapping."};
   var best=decision.Best;
   var episodes=decision.ProviderMapped?best!.Candidate.Link!.Episodes:[];
   // Accept only a bounded, consecutive provider assignment.
@@ -45,7 +45,7 @@ public sealed class SubtitleMatcher(ISubtitleReferenceSource source,string cache
   var details=JsonSerializer.SerializeToNode(new{version=SubtitleResult.Version,comparisonRevision=TranscriptComparison.Revision,accepted=supported,provider=series.Provider,seriesId=series.Id,
    reviewResolutionIds=reviews.Where(r=>supported&&!r.Bool("undone")&&r?["subtitle_reference_review"] is {} review&&
     best!.Candidate.Link!.EvidenceReferences.Contains(review["reference"].Text("id"))).Select(r=>r.Text("id")).ToArray(),catalogHash=SubtitleResult.CatalogHash(catalog),dialogueHash=SubtitleResult.DialogueHash(cues),referenceHash,referenceFiles=candidates.Count(c=>c.Parts.Length==1),
-   mappingConflict=best?.Candidate.Parts.Any(p=>p.MappingBlocked)==true,sourceTitleEvidence=sourceEvidence,equivalentReferences=decision.EquivalentReferences,reason=decision.ProviderMapped&&!supported?"Reference coverage must be one to four consecutive episodes in one season.":decision.Reason,note,decision.Margin,selectedEpisodes=episodes,
+   textSupported=decision.TextSupported,mappingConflict=best?.Candidate.Parts.Any(p=>p.MappingBlocked)==true,sourceTitleEvidence=sourceEvidence,equivalentReferences=decision.EquivalentReferences,reason=decision.ProviderMapped&&!supported?"Reference coverage must be one to four consecutive episodes in one season.":decision.Reason,note,decision.Margin,selectedEpisodes=episodes,
    best=best==null?null:new{best.Candidate.Id,best.Candidate.Name,best.Candidate.Link,best.Overlap,best.OrderedParts,best.CompleteExtent,best.Parts,
     references=best.Candidate.Parts.Select(p=>new{p.Reference.Id,p.Reference.Name,p.Reference.Url,contentHash=ReviewedReferenceMapping.Digest(p.Reference.Index)})},
    alternatives=decision.Ranking.Skip(1).Take(3).Select(r=>new{r.Candidate.Name,r.Overlap.Score,episodeIds=r.Candidate.Link?.Episodes.Select(e=>e.Id)})},Data.Options)!.AsObject();
@@ -69,10 +69,19 @@ public static class SubtitleResult {
    return proof.Text("version")==Version&&cues.Count>0&&proof.Text("dialogue_hash")==DialogueHash(cues)&&proof.Text("reason").Length>0;
   }catch(Exception ex) when(ex is InvalidOperationException or JsonException or ArgumentException){return false;}
  }
+ public static string UnresolvedStatus(JsonObject? details) {
+  if(details==null||details.Bool("accepted"))return "Unresolved";
+  if(details.Text("reason").StartsWith("Shared dialogue does not extend",StringComparison.Ordinal)||details.Text("reason").StartsWith("Only part of",StringComparison.Ordinal)||details.Text("reason").StartsWith("All parts must cover",StringComparison.Ordinal))return "Partial subtitle correspondence";
+  if(details.Bool("text_supported")||details.Text("reason").StartsWith("Dialogue matches,",StringComparison.Ordinal))return "Subtitle matched — episode identity unresolved";
+  if(details.Text("reason").Contains("unavailable",StringComparison.OrdinalIgnoreCase))return "Subtitle lookup unavailable";
+  if(details.Int("reference_files",-1)==0)return "No subtitle references available";
+  if(details.Text("reason").Contains("ambiguous",StringComparison.OrdinalIgnoreCase)||details.Text("reason").StartsWith("Competing dialogue",StringComparison.Ordinal))return "Subtitle match ambiguous";
+  return "No matching subtitle reference";
+ }
  public static string FallbackSummary(JsonObject details) {
   var reason=details.Text("reason","No supported subtitle assignment.");
   if(details["best"] is not JsonObject best||best["overlap"] is not JsonObject overlap)return reason;
-  return reason+$" Best reference: {best.Text("name")} · source sequences {overlap["source_coverage"]!.GetValue<double>():P0}, reference sequences {overlap["reference_coverage"]!.GetValue<double>():P0}"+
+  return UnresolvedStatus(details)+". "+reason+$" Best reference: {best.Text("name")} · source sequences {overlap["source_coverage"]!.GetValue<double>():P0}, reference sequences {overlap["reference_coverage"]!.GetValue<double>():P0}"+
    (best["link"]==null?" · no verified provider-title mapping.":".");
  }
  public const string Version="subtitle-provider-v1";

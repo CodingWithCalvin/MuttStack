@@ -36,11 +36,11 @@ public sealed class OpenSubtitlesReferences(string cacheRoot,OpenSubtitlesCreden
   if(ScoutStorage.Exists(limitPath))try {
    var limit=Data.Read(limitPath);if(DateTimeOffset.TryParse(limit.Text("retry_after"),out var retry)&&retry>DateTimeOffset.UtcNow){notes.Add(limit.Text("reason")+" Retry after "+retry.ToLocalTime().ToString("g")+".");return Finish();}
   }catch(Exception ex) when(ex is IOException or InvalidDataException or JsonException or InvalidOperationException){/* Invalid local limit record does not block a fresh check. */}
-  bool complete=true;int searches=0,downloads=0;var attempted=new HashSet<long>();
+  bool complete=true;int searches=0,downloads=0,failedSeasons=0;var attempted=new HashSet<long>();
   try {
    string parent=series.Provider=="tmdb"?"parent_tmdb_id":"parent_imdb_id";
    string id=series.Provider=="tmdb"?series.Id:(await SubtitleSeriesLookup.ImdbAsync(series,null,metadataHandler,ct))[2..].TrimStart('0');
-   using var api=new OpenSubtitlesApi(credentials,apiHandler?.Invoke());
+   using var api=new OpenSubtitlesApi(credentials,apiHandler?.Invoke(),progress);
    var seasons=catalog.Select(e=>e.Season).Distinct().OrderBy(s=>existing.Any(r=>r.Season==s)?1:0).ThenBy(s=>s).ToArray();
    if(seasons.Length>30)throw new InvalidDataException("OpenSubtitles automatic season limit exceeded.");
    var covered=ReferenceValidation.Check(existing.Concat(references).ToList(),catalog).References.Select(r=>ReferenceTitles.Find(r,catalog,out _)).Where(l=>l?.Complete==true).Select(l=>l!.Key).ToHashSet();
@@ -48,7 +48,18 @@ public sealed class OpenSubtitlesReferences(string cacheRoot,OpenSubtitlesCreden
     progress.Report($"OpenSubtitles: checking English references for season {season:00}…");int pages=1;
     for(int page=1;page<=pages;page++) {
      ct.ThrowIfCancellationRequested();if(searches>=60||downloads>=48){complete=false;notes.Add("OpenSubtitles retrieval budget reached; missing coverage remains visible.");goto Done;}
-     searches++;var result=await api.Search(parent,id,season,page,ct);
+     JsonObject result;
+     try {
+      result=await SubtitleSearchCache.Get(root,$"open:{parent}:{id}:{season}:{page}",()=>{searches++;return api.Search(parent,id,season,page,ct);},
+       r=>r["data"] is JsonArray rows&&rows.Count<=1000&&r.Int("page",page)==page,progress,ct);
+     }catch(OpenSubtitlesAccessException ex) when(ex.Transient&&api.Ready) {
+      complete=false;failedSeasons++;
+      var message=$"OpenSubtitles season {season:00} unavailable after read retries: {ex.Message} "+(failedSeasons>=3?"Three season lookups failed; stopping this provider for now and retaining saved references.":"Continuing with other seasons.");
+      if(ex.RetryAfter is {} later&&later>DateTimeOffset.UtcNow.AddSeconds(10)){Limit("OpenSubtitles requested a pause before retrying.",later);goto Done;}
+      notes.Add(message);progress.Report(message);
+      if(failedSeasons>=3)goto Done;
+      break;
+     }
      if(result["data"] is not JsonArray data||data.Count>1000)throw new InvalidDataException("Invalid OpenSubtitles search results.");
      pages=Math.Clamp(result.Int("total_pages",1),1,1000);
      if(result.Int("page",page)!=page)throw new InvalidDataException("OpenSubtitles returned a different results page.");

@@ -17,6 +17,8 @@ public sealed partial class MediaPipeline {
             if(group.Episode!=null)progress.Report($"Matched: {names} → {group.Code} — {group.Title} (collection checks complete).");
             else if(group.Compilation==null&&group.Claims.Count>0)progress.Report($"Held for review: {names} — {EvidenceReview.Create(group).Assessment}. No episode assignment accepted.");
         }
+        int identityPending=groups.Count(g=>g.Status=="unassigned"&&g.Rows.Any(r=>Subtitles.SubtitleResult.UnresolvedStatus(r["subtitle_match"] as JsonObject)=="Subtitle matched — episode identity unresolved"));
+        if(identityPending>0)progress.Report($"Subtitle dialogue matched for {identityPending} additional recording group(s), but their episode identities remain unverified. They are held for reference mapping or optional AI review.");
         progress.Report($"Matching results: {groups.Count(g=>g.Episode!=null)} recording group(s) matched, {groups.Count(g=>g.Category=="Unresolved")} unresolved, {groups.Count(g=>g.NotProcessed)} not processed.");
     }
 }

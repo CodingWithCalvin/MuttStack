@@ -9,7 +9,7 @@ public sealed record EvidenceSelection(IReadOnlyList<Episode> Episodes,IReadOnly
 /// <summary>Deterministic retrieval from original dialogue; never an episode assignment.</summary>
 public static class DialogueEvidence
 {
-    public const string Revision="original-spans-retrieval-v3";
+    public const string Revision="original-spans-retrieval-v4-blocks";
     public static List<DialogueSpan> Spans(IReadOnlyList<Block> blocks) {
         var spans=new List<DialogueSpan>();
         foreach(var block in blocks) {
@@ -46,6 +46,7 @@ public static class DialogueEvidence
         var include=selected?.ToHashSet();var text=new StringBuilder();int previous=-1;
         foreach(var group in spans.Where(s=>include==null||include.Contains(s.Block)).GroupBy(s=>s.Block)) {
             if(include!=null&&group.Key>previous+1)text.AppendLine("[... omitted original dialogue ...]");
+            text.Append("Original block b").Append(group.Key).AppendLine(":");
             foreach(var span in group)text.Append("[s").Append(span.Id).Append("] ").Append(span.Text).Append(' ');
             text.AppendLine().AppendLine();previous=group.Key;
         }

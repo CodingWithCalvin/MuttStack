@@ -55,8 +55,8 @@ static class SubtitleNormalizationTests {
    var source=new SubdlReferences(root,"fake-reference-key",apiHandler:Api,metadataHandler:Metadata);var set=source.LoadAsync(series,guide,new Progress(),default).GetAwaiter().GetResult();
    Check(set.References.Count==6&&downloads.Count==4&&uploads.All(n=>set.References.Any(r=>r.Name==n)));
    var manifest=Directory.GetFiles(root,"manifest.json",SearchOption.AllDirectories).Single();var old=Data.Read(manifest);old.Remove("retrieval_policy");Data.Save(manifest,old);
-   source.LoadAsync(series,guide,new Progress(),default).GetAwaiter().GetResult();Check(searches==2&&downloads.Count==4);
-   source.LoadAsync(series,guide,new Progress(),default).GetAwaiter().GetResult();Check(searches==2,"Fresh retrieval policy should reuse its saved cache");
+   source.LoadAsync(series,guide,new Progress(),default).GetAwaiter().GetResult();Check(searches==1&&downloads.Count==4);
+   source.LoadAsync(series,guide,new Progress(),default).GetAwaiter().GetResult();Check(searches==1,"Fresh retrieval policy should reuse its saved cache");
   });
   if(Environment.GetEnvironmentVariable("SCOUT_SUBTITLE_REPLAY") is string fixture)test("Isolated iCarly replay recovers six speech matches and keeps unmapped or wrong references held",()=>{
    var report=Data.Read(Path.Combine(fixture,"6e5bdca7626b4fde987a2b0ff343c39a-report.json"));var series=report["series_identity"]!.Deserialize<SeriesIdentity>(Data.Options)!;var guide=Data.Catalog(Path.Combine(fixture,"catalog.json"));

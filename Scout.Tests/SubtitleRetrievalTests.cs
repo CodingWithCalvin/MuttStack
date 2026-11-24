@@ -29,6 +29,13 @@ static class SubtitleRetrievalTests {
    .LoadAsync(new("tmdb","123","Example"),guide,Logs,default).GetAwaiter().GetResult();
  }
  public static void Run(Action<string,Action> test,string temp) {
+  test("Repeated SubDL runs reuse successful searches without spending the network budget or starving later seasons",()=>{
+   var f=new Fixture(Path.Combine(temp,"retrieval-budget-cache"),_=>Json("{\"subtitles\":[],\"results\":[]}"));
+   var guide=Enumerable.Range(1,4).SelectMany(s=>Enumerable.Range(1,20).Select(e=>new Episode(s*100+e,s,e,$"Story {s}-{e}"))).ToArray();
+   Check(f.Load(guide).References.Count==0);int first=f.Requests.Count;Check(first==61);
+   Check(f.Load(guide).References.Count==0);int second=f.Requests.Count;Check(second>first&&second-first<=60&&f.Requests.Any(u=>u.Query.Contains("season=4&")));
+   f.Load(guide);Check(f.Requests.Count==second&&f.Logs.Lines.Any(l=>l.Contains("cached subtitle search")));
+  });
   test("SubDL IDs normalize documented prefixed and numeric identities only",()=>{
    foreach(var raw in new[]{"123","\"123\"","\"sd123\"","\"SD000123\"","\"  sd123  \""})Check(SubdlIdentity.Normalize(JsonNode.Parse(raw))=="123");
    foreach(var raw in new[]{"null","0","-123","123.5","true","{}","[]","\"sd\"","\"sd123x\"","\"123 OR 1\"","\"000\""})Check(SubdlIdentity.Normalize(JsonNode.Parse(raw))==null);
@@ -121,6 +128,7 @@ static class SubtitleRetrievalTests {
     return Json(repaired&&u.Query.Contains("episode=2")?"""{"subtitles":[{"url":"/subtitle/two.zip","unpack_files":["Example.S01E02.Golden.River.srt"]}]}""":"""{"subtitles":[{"url":"/subtitle/one.zip","unpack_files":["Example.S01E01.Silver.Comet.srt"]}]}""");
    });
    Check(f.Load(guide).References.Count==1);var manifest=Directory.EnumerateFiles(cache,"manifest.json",SearchOption.AllDirectories).Single();var legacy=Data.Read(manifest);legacy["complete"]=true;legacy["retrieval_policy"]="legacy-largest-pack";Data.Save(manifest,legacy);
+   foreach(var search in Directory.EnumerateFiles(cache,"*.json",SearchOption.AllDirectories).Where(p=>p.Contains("searches-v1"))){var entry=Data.Read(search);entry["updated"]=DateTimeOffset.UtcNow.AddDays(-2).ToString("O");Data.Save(search,entry);}
    repaired=true;Check(f.Load(guide).References.Count==2&&Data.Read(manifest).Bool("complete"));
    Check(f.Requests.Count(u=>u.Host=="dl.subdl.com"&&u.AbsolutePath.EndsWith("one.zip"))==1);
   });

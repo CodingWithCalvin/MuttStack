@@ -46,9 +46,11 @@ public sealed partial class DialogueMatcher
         var proposed=fullSearch?await Broaden():await Search(selection.Episodes,false);bool broadened=fullSearch;
         if(proposed.Count==0&&!broadened){proposed=await Broaden();broadened=true;}
         if(proposed.Count==0)return Finish(Empty());
+        proposed=EpisodeCoverage.SharedGroup(proposed,catalog).ToList();
         var result=await AuditSpansAsync(cues,proposed,model,endpoint,ct,fullSearch?2:proposed.Count>1?2:1,broadened?null:selection);
         if(result.Text("assessment")!="supported"&&!broadened) {
             var broader=await Broaden();
+            broader=EpisodeCoverage.SharedGroup(broader,catalog).ToList();
             if(broader.Count>0&&!broader.Select(e=>e.Id).SequenceEqual(proposed.Select(e=>e.Id))) {
                 var previous=result.DeepClone();result=await AuditSpansAsync(cues,broader,model,endpoint,ct,broader.Count>1?2:1);result["prior_retrieval_audit"]=previous;
             }
@@ -66,24 +68,30 @@ public sealed partial class DialogueMatcher
 
     private async Task<JsonObject> AuditSpansAsync(IReadOnlyList<Cue> cues,IReadOnlyList<Episode> episodes,string model,string endpoint,CancellationToken ct,int passes=2,EvidenceSelection? selected=null) {
         var blocks=Blocks(cues);var spans=DialogueEvidence.Spans(blocks);
+        bool shared=EpisodeCoverage.HasSharedDescription(episodes);
+        if(shared)passes=2;
+        var guideEpisodes=shared?new[]{episodes[0]}:episodes;
         var guides=new JsonObject();
-        for(int i=0;i<episodes.Count;i++) {
-            var statements=new JsonObject();var text=GroundedVerification.Statements(episodes[i]);for(int j=0;j<text.Length;j++)statements["g"+j]=text[j];
+        for(int i=0;i<guideEpisodes.Count;i++) {
+            var statements=new JsonObject();var text=GroundedVerification.Statements(guideEpisodes[i]);for(int j=0;j<text.Length;j++)statements["g"+j]=text[j];
             guides["c"+i]=new JsonObject{["statements"]=statements};
         }
         var audits=new List<JsonObject>();var rawAudits=new JsonArray();
-        var relationship=EpisodeCoverage.AreNumberedParts(episodes)?new JsonObject{["kind"]="numbered_parts",["members"]=JsonSerializer.SerializeToNode(episodes.Select((e,i)=>new{candidate="c"+i,part=DescriptionMapping.Part(e.Title)!.Value.Part}))}:new JsonObject{["kind"]="not_established"};
+        var relationship=EpisodeCoverage.AreNumberedParts(episodes)?new JsonObject{["kind"]="numbered_parts",["members"]=JsonSerializer.SerializeToNode(episodes.Select((e,i)=>new{candidate="c"+i,part=EpisodeCoverage.PartNumber(e)}))}:new JsonObject{["kind"]="not_established"};
         bool excerpts=options?.AllowExcerptVerification==true&&passes==1&&episodes.Count==1&&DescriptionMapping.Part(episodes[0].Title)==null&&selected!=null&&selected.Blocks.Count<blocks.Count&&selected.Blocks.Contains(0)&&selected.Blocks.Contains(blocks.Count-1);
         string fallback="";
-        async Task<JsonObject> Call(bool full,int pass) {
+        async Task<JsonObject> Call(bool full,int pass,string? validationError=null) {
             var included=full?null:selected!.Blocks;var visible=spans.Where(s=>included==null||included.Contains(s.Block)).ToArray();
-            var schema=CompactGrounding.Schema(JsonNode.Parse(Asset("span-grounded-schema.json"))!.AsObject(),visible,episodes);
+            var template=JsonNode.Parse(Asset("span-grounded-schema.json"))!.AsObject();
+            var schema=shared?SharedGuideGrounding.Schema(template,visible,episodes):CompactGrounding.Schema(template,visible,episodes);
             if(!full) {schema["properties"]!["full_dialogue_required"]=new JsonObject{["type"]="boolean"};schema.Array("required").Add("full_dialogue_required");}
             var source=EvidenceInput(spans,blocks.Count,included);source["candidates"]=guides.DeepClone();source["catalog_relationship"]=relationship.DeepClone();
-            source["stage_instructions"]=Asset("span-grounded-prompt.txt")+(!full?"\nThis request contains selected original passages with explicit gaps, NOT the complete dialogue. Return full_dialogue_required=true if missing context is needed for any guide statement, chronology, another story, promo/recap distinction or recording completeness. Missing passages cannot establish that events are absent. Only a supported single complete episode can take the evidence route; all other outcomes receive full dialogue. Never claim to have inspected omitted passages.":"");
+            source["stage_instructions"]=Asset(shared?"shared-guide-prompt.txt":"span-grounded-prompt.txt")+(!full?"\nThis request contains selected original passages with explicit gaps, NOT the complete dialogue. Return full_dialogue_required=true if missing context is needed for any guide statement, chronology, another story, promo/recap distinction or recording completeness. Missing passages cannot establish that events are absent. Only a supported single complete episode can take the evidence route; all other outcomes receive full dialogue. Never claim to have inspected omitted passages.":"");
             source["task"]=full?(pass==0?"Audit every guide statement and classify the COMPLETE recording. Cite span IDs only.":"Independently audit every guide statement and classify the COMPLETE recording. Cite span IDs only."):"Audit the supplied evidence. Request the complete dialogue if it cannot safely establish one episode and its coverage.";
-            var raw=await transport.CompleteAsync(model,endpoint,Asset("evidence-system.txt"),source,schema,ct,$"Verifying guide evidence · pass {pass+1}/{passes}");
-            rawAudits.Add(new JsonObject{["scope"]=source["scope"]!.DeepClone(),["response"]=raw.DeepClone()});
+            if(validationError!=null)source["validation_feedback"]="The previous audit failed validation: "+validationError+" Recheck the SAME candidates against the original dialogue. Do not change identities, fabricate evidence or force support to satisfy validation. Return unresolved when coverage or any guide statement cannot be established. This is one bounded evidence retry.";
+            if(validationError!=null)source["task"]=source.Text("task")+"\n"+source.Text("validation_feedback");
+            var raw=await transport.CompleteAsync(model,endpoint,Asset("evidence-system.txt"),source,schema,ct,validationError==null?$"Verifying guide evidence · pass {pass+1}/{passes}":"Rechecking evidence for the same candidates");
+            rawAudits.Add(new JsonObject{["scope"]=source["scope"]!.DeepClone(),["pass"]=pass+1,["retry"]=validationError!=null,["validation_feedback"]=validationError,["response"]=raw.DeepClone()});
             var decision=raw.DeepClone().AsObject();
             if(!full) {
                 if(raw.Count!=3||decision["full_dialogue_required"] is not JsonValue flag||!flag.TryGetValue<bool>(out bool required))throw new InvalidDataException("Evidence audit omitted its full-dialogue requirement.");
@@ -91,7 +99,7 @@ public sealed partial class DialogueMatcher
                 decision.Remove("full_dialogue_required");
             }
             CompactGrounding.ValidateVisibleCitations(decision,visible);
-            var result=CompactGrounding.ExpandKeyed(decision,spans,blocks,episodes);
+            var result=shared?SharedGuideGrounding.Expand(decision,spans,blocks,episodes):CompactGrounding.ExpandKeyed(decision,spans,blocks,episodes);
             if(!full&&(result.Text("assessment")!="supported"||result.Text("coverage")!="complete"||result["recording_decision"].Text("kind")!="single_episode"))throw new InvalidDataException("Evidence audit did not establish a complete single episode.");
             if(!full) {
                 var support=result.Array("candidate_checks").SelectMany(c=>c.Array("guide_grounding")).SelectMany(f=>f.Array("evidence")).Select(e=>e.Int("block")).Distinct().Order().ToArray();
@@ -108,12 +116,18 @@ public sealed partial class DialogueMatcher
                 catch(InvalidDataException ex){fallback=ex.Message;excerpts=false;}
                 catch(ModelContextException ex){fallback=ex.Message;excerpts=false;}
             }
-            if(!excerpts)for(int pass=0;pass<passes;pass++)audits.Add(await Call(true,pass));
+            if(!excerpts)for(int pass=0;pass<passes;pass++) {
+                try {audits.Add(await Call(true,pass));}
+                catch(InvalidDataException ex) when(!AssignmentValidation.IsTerminal(ex)||ex.Data[AssignmentValidation.ReasonKey]?.ToString()==nameof(AssignmentIssue.CoverageMismatch)) {
+                    if(rawAudits.Count>0)rawAudits[^1]!["error"]=ex.Message;
+                    ct.ThrowIfCancellationRequested();audits.Add(await Call(true,pass,ex.Message));
+                }
+            }
             string Decision(JsonObject r)=>r.Text("assessment")+":"+r.Text("coverage")+":"+r["recording_decision"].Text("kind")+":"+string.Join(",",r.Array("matches").Select(m=>m.Int("episode_id")));
             if(audits.Select(Decision).Distinct().Count()!=1)throw new InvalidDataException("Independent compact coverage audits disagree. No assignment accepted.");
-            var result=audits[^1];result["grounded_verification"]=new JsonObject{["method"]="compact-original-span-audits-v5",["passes"]=audits.Count,["full_dialogue"]=!excerpts,
+            var result=audits[^1];result["grounded_verification"]=new JsonObject{["method"]="compact-original-span-audits-v6",["passes"]=audits.Count,["full_dialogue"]=!excerpts,
                 ["included_blocks"]=excerpts?selected!.Blocks.Count:blocks.Count,["total_blocks"]=blocks.Count,["fallback_reason"]=fallback,["candidate_ids"]=JsonSerializer.SerializeToNode(episodes.Select(e=>e.Id)),["raw_audits"]=rawAudits.DeepClone()};
             result["method"]=Version;result["model"]=model;result["request_revision"]=RequestRevision;result["dialogue_hash"]=CollectionResolver.Hash(JsonSerializer.Serialize(cues,Data.Options));return result;
-        }catch(Exception ex){ex.Data["model_attempts"]=rawAudits.ToJsonString();ex.Data["model_candidate_ids"]=JsonSerializer.Serialize(episodes.Select(e=>e.Id));throw;}
+        }catch(Exception ex){if(rawAudits.Count>0&&rawAudits[^1]?["error"]==null)rawAudits[^1]!["error"]=ex.Message;ex.Data["model_attempts"]=rawAudits.ToJsonString();ex.Data["model_candidate_ids"]=JsonSerializer.Serialize(episodes.Select(e=>e.Id));throw;}
     }
 }

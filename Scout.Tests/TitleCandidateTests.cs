@@ -17,9 +17,12 @@ static class TitleCandidateTests {
    ["g1"]=new JsonObject{["verdict"]="supported",["evidence"]=new JsonArray("s"+(offset+c*2+1))}}};
   return new(){["candidates"]=candidates,["recording"]=new JsonObject{["kind"]=kind,["candidates"]=new JsonArray(Enumerable.Range(0,parts).Select(i=>(JsonNode?)JsonValue.Create("c"+i)).ToArray())}};
  }
- static JsonObject Unsupported() {
-  var r=Audit("unresolved");r["recording"]!["candidates"]=new JsonArray();r["candidates"]!["c0"]!["role"]="unknown";
-  foreach(var fact in r["candidates"]!["c0"]!["statements"]!.AsObject()){fact.Value!["verdict"]="insufficient_evidence";fact.Value["evidence"]=new JsonArray();}
+ static JsonObject Unsupported(int parts=1) {
+  var r=Audit("unresolved",parts);r["recording"]!["candidates"]=new JsonArray();
+  foreach(var candidate in r["candidates"]!.AsObject()) {
+   candidate.Value!["role"]="unknown";
+   foreach(var fact in candidate.Value["statements"]!.AsObject()){fact.Value!["verdict"]="insufficient_evidence";fact.Value["evidence"]=new JsonArray();}
+  }
   return r;
  }
  sealed class Handler(Func<JsonObject,int,JsonObject> reply):HttpMessageHandler {
@@ -83,7 +86,7 @@ static class TitleCandidateTests {
   });
   foreach(bool disagreement in new[]{false,true})test("Multipart title candidates require two consistent complete dialogue audits: "+disagreement,()=>{
    var guide=new[]{Guide[0] with{Title="The Rescue (1)"},Guide[1] with{Title="The Rescue (2)"}};var candidate=TitleCandidates.Find("Example.S03E11E12.The.Rescue.mkv",guide)!;
-   Check(candidate.Episodes.Length==2);using var handler=new Handler((_,n)=>n==2&&disagreement?Unsupported():Audit("continuous_parts",2));using var http=new HttpClient(handler);
+   Check(candidate.Episodes.Length==2);using var handler=new Handler((_,n)=>n==2&&disagreement?Unsupported(2):Audit("continuous_parts",2));using var http=new HttpClient(handler);
    try{var r=new DialogueMatcher(http).VerifyTitleCandidateAsync(Cues,candidate,"m",Endpoint).GetAwaiter().GetResult();Check(!disagreement&&TitleCandidates.Accepted(r,candidate,Cues)&&handler.Requests.Count==2);}catch(InvalidDataException){Check(disagreement&&handler.Requests.Count==2);}
   });
   test("Title cache identity changes with source name guide dialogue model endpoint and generation",()=>{

@@ -22,6 +22,7 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
    _ when group.Feature=>"Non-episode content suggested",
    _ when group.Episode!=null&&group.Rows.All(r=>r.Text("matching_method")=="reasoning"||r["reasoning"]!=null)=>"Dialogue supports this match — suggestion",
    _ when group.Episode!=null=>"Filename/catalog suggestion — content unverified",
+   _ when group.Status=="unassigned"&&group.Rows.Any(r=>r["subtitle_match"]!=null)=>group.DisplayStatus,
    _=>"Uncertain — no episode assigned"
   };
   var suggestion=group.Episode is {} episode?$"{group.Code} · {group.Title}":"No episode assignment";
@@ -47,9 +48,9 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
    if(row["transcription"] is JsonObject speech)sections.Add(new("Machine transcription",$"{speech.Text("name")} · {speech.Text("device")} · audio track {speech.Int("audio_track")} · English\nGenerated locally from audio. Recognition errors are possible; model scores are not confidence in an episode assignment."));
    if(row["subtitle_match"] is JsonObject subtitle) {
     bool current=Subtitles.SubtitleResult.IsSubtitle(row);
-    sections.Add(new(current?"Subtitle matching":"Subtitle stage before AI",subtitle.Text("reason")+"\n"+subtitle.Text("note")));
+    sections.Add(new(current?"Subtitle matching":row["reasoning"]!=null?"Subtitle stage before AI":"Subtitle comparison",subtitle.Text("reason")+"\n"+subtitle.Text("note")));
     if(subtitle["source_title_evidence"] is JsonObject sourceTitle)
-     sections.Add(new("Corroborated source title",sourceTitle.Text("name")+"\nUnique provider title supported by a complete subtitle match, repeated title terms ("+string.Join(", ",sourceTitle.Array("title_terms").Select(n=>n!.GetValue<string>()))+") and distinctive synopsis terms: "+string.Join(", ",sourceTitle.Array("synopsis_terms").Select(n=>n!.GetValue<string>()))+". The filename is a hint for this recording only."));
+     sections.Add(new("Corroborated source title",sourceTitle.Text("name")+"\nUnique provider title supported by a complete subtitle match, "+(sourceTitle.Array("title_terms").Count==0?"independently ranked plot details: ":"repeated title terms ("+string.Join(", ",sourceTitle.Array("title_terms").Select(n=>n!.GetValue<string>()))+") and distinctive synopsis terms: ")+string.Join(", ",sourceTitle.Array("synopsis_terms").Select(n=>n!.GetValue<string>()))+". The filename is a hint for this recording only."));
     if(subtitle.Array("equivalent_references").Count>0)sections.Add(new("Duplicate subtitle versions",$"{subtitle.Array("equivalent_references").Count} equivalent reference version(s) grouped by full dialogue. Different upload numbers do not establish additional episode identities."));
     if(subtitle["best"] is JsonObject best) {
      sections.Add(new("Subtitle references",string.Join("\n",best.Array("references").Select(r=>r.Text("name")+"\n"+r.Text("url")))));
@@ -101,6 +102,7 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
     if(candidate.Text("reason")!="")sections.Add(new("Why it was suggested",candidate.Text("reason")));
     if(e?.Overview is {Length:>0} overview)sections.Add(new("Episode guide",overview));
     if(e?.DescriptionSource is {} description)sections.Add(new("Description source",$"{description.Provider.ToUpperInvariant()} · episode {description.EpisodeId}\n{description.Url}\nSupplemental description only; the selected catalog controls episode identity and numbering."));
+    if(e?.OriginalDescription is {} original)sections.Add(new("Replaced guide description",original.Overview+"\nThis description matched a different episode more closely. The replacement retains the selected catalog's episode ID and numbering."));
     var quotes=candidate.Array("evidence");
     foreach(var quote in quotes) {
      var start=quote?["start"]?.GetValue<double>()??0;var text=quote.Text("text",quote.Text("source_text"));
@@ -110,6 +112,12 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
      sections.Add(new($"Supporting dialogue · {Time(start)}",body));
     }
     if(quotes.Count==0)sections.Add(new("Dialogue evidence","No dialogue excerpts saved for this suggestion. Filename/catalog matching does not verify video content."));
+   }
+   if(reasoning?["shared_guide_grounding"] is JsonObject sharedGuide) {
+    sections.Add(new("Shared multipart guide","The provider repeats one synopsis across the numbered parts. The whole-story guide was checked once; each installment also has distinct ordered dialogue evidence."));
+    foreach(var fact in sharedGuide.Array("candidate_checks").SelectMany(c=>c.Array("guide_grounding")))
+     sections.Add(new("Shared guide statement · "+fact.Text("verdict").Replace('_',' '),fact.Text("guide_text")+"\n"+
+      string.Join("\n",fact.Array("evidence").Select(q=>q.Text("source_quote",q.Text("quote"))))));
    }
    foreach(var check in reasoning.Array("candidate_checks")) {
     sections.Add(new("Candidate check · "+check.Text("episode_title",$"Episode ID {check.Int("episode_id")}"),check.Text("event_comparison","No comparison explanation saved.")));
@@ -132,7 +140,7 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
     var id=alternative.Int("episode_id");var title=reasoning.Array("candidate_checks").FirstOrDefault(c=>c.Int("episode_id")==id).Text("episode_title",$"Episode ID {id}");
     sections.Add(new("Rejected alternative · "+title,alternative.Text("reason_against",alternative.Text("reason","No rejection explanation saved."))));
    }
-   if(row.Array("candidates").Count==0&&reasoning==null&&row.Text("error")=="")sections.Add(new("Evidence unavailable","This recording has no saved match rationale or dialogue evidence."));
+   if(row.Array("candidates").Count==0&&reasoning==null&&row.Text("error")==""&&row["dialogue"].Array("cues").Count==0&&row["subtitle_match"]==null)sections.Add(new("Evidence unavailable","This recording has no saved match rationale or dialogue evidence."));
   }
   return new(assessment,suggestion,sections);
  }

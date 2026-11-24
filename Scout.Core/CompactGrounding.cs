@@ -21,6 +21,9 @@ public static class CompactGrounding
         var fact=template["properties"]!["candidates"]!["items"]!["properties"]!["statements"]!["items"]!.DeepClone().AsObject();
         fact["properties"]!.AsObject().Remove("statement");fact["required"]=new JsonArray("verdict","evidence");
         fact["properties"]!["evidence"]!["items"]!["enum"]=new JsonArray(spans.Select(s=>(JsonNode?)JsonValue.Create("s"+s.Id)).ToArray());
+        var supported=fact.DeepClone().AsObject();supported["properties"]!["verdict"]!["enum"]=new JsonArray("supported","contradicted");supported["properties"]!["evidence"]!["minItems"]=1;
+        var insufficient=fact.DeepClone().AsObject();insufficient["properties"]!["verdict"]!["enum"]=new JsonArray("insufficient_evidence");
+        fact=new JsonObject{["anyOf"]=new JsonArray(supported,insufficient)};
         var role=template["properties"]!["candidates"]!["items"]!["properties"]!["role"]!;
         static JsonObject RequiredObject(JsonObject properties)=>new(){["type"]="object",["additionalProperties"]=false,["properties"]=properties,
             ["required"]=new JsonArray(properties.Select(p=>(JsonNode?)JsonValue.Create(p.Key)).ToArray())};

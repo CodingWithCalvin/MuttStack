@@ -11,7 +11,7 @@ static class SubtitleCoverageTests {
  }
  public static void Run(Action<string,Action> test,string temp) {
   void Check(bool value,string message="Subtitle coverage assertion failed"){if(!value)throw new Exception(message);}
-  foreach(bool combined in new[]{true,false})test(combined?"Multi-season English packs report actual coverage on first load and cache reuse":"Genuine English reference gaps remain visible and do not receive the complete-cache TTL",()=>{
+  foreach(bool combined in new[]{true,false})test(combined?"Multi-season English packs report actual coverage on first load and cache reuse":"Genuine English reference gaps remain visible while successful searches are reused temporarily",()=>{
    var cache=Path.Combine(temp,"subtitle-coverage-"+combined);var series=new SeriesIdentity("tvdb","123","Example");
    Episode[] guide=[new(1,1,1,"Opening"),new(2,2,1,"Return")];
    using var bytes=new MemoryStream();
@@ -35,7 +35,12 @@ static class SubtitleCoverageTests {
    var manifest=Directory.EnumerateFiles(cache,"manifest.json",SearchOption.AllDirectories).Single();Check(Data.Read(manifest).Bool("complete")==combined);
    if(!combined){var legacy=Data.Read(manifest);legacy["complete"]=true;Data.Save(manifest,legacy);}
    int before=requests;var next=source.LoadAsync(series,guide,logs,default).GetAwaiter().GetResult();
-   Check(combined?requests==before:requests>before);
+   Check(requests==before);
+   if(!combined) {
+    Check(!Data.Read(manifest).Bool("complete"));
+    foreach(var search in Directory.EnumerateFiles(cache,"*.json",SearchOption.AllDirectories).Where(p=>p.Contains("searches-v1"))){var entry=Data.Read(search);entry["updated"]=DateTimeOffset.UtcNow.AddHours(-25).ToString("O");Data.Save(search,entry);}
+    source.LoadAsync(series,guide,logs,default).GetAwaiter().GetResult();Check(requests>before&&!Data.Read(manifest).Bool("complete"));
+   }
    Check(next.Note.Contains(combined?"02: 1":"No English reference files loaded for subtitle season(s) 02"));
    Check(!File.ReadAllText(manifest).Contains("fake-coverage-key"));
   });
