@@ -214,6 +214,8 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
                 row["dialogue"]=new JsonObject {["cues"]=JsonSerializer.SerializeToNode(cues,Data.Options)};
                 if(cached!=null&&RunRecovery.SourceUnchanged(cached))row["primary_fingerprint"]=cached["primary_fingerprint"]!.DeepClone();
                 if(compilation==null) {
+                using var extentScope=matcher.ForRecording(RecordingExtent.FromRow(row,new JsonObject{
+                    ["files"]=rows.DeepClone(),["series_identity"]=JsonSerializer.SerializeToNode(settings.SeriesIdentity,Data.Options)},episodes));
                 var key=CollectionResolver.Hash(JsonSerializer.Serialize(new{generation,issues,version=DialogueMatcher.Version,revision=DialogueMatcher.RequestRevision,scope=matcher.CacheScope,settings.Endpoint,cues,episodes,settings.Model}));
                 var cachePath=Path.Combine(cache,key+".json");
                 JsonObject? result=null;
@@ -259,6 +261,11 @@ public sealed partial class MediaPipeline(DialogueMatcher matcher,Func<string,IE
                             bool accepted=TitleCandidates.Accepted(audit,titleCandidate,cues);
                             row["title_verification_attempt"]=new JsonObject{["accepted"]=accepted,["result"]=audit.DeepClone(),["reason"]=accepted?"Complete dialogue supports the proposed episode title(s).":"Title verification did not establish the complete proposed recording; full identification is still needed."};
                             if(accepted)result=audit;
+                            else if(audit.Bool("coverage_review_only")) {
+                                result=audit;
+                                row["title_verification_attempt"]!["reason"]="Story identified; complete multipart coverage needs review. Skipping a redundant full-catalog search.";
+                                progress.Report("Story identified; complete multipart coverage needs review. Skipping a redundant full-catalog search.");
+                            }
                         }catch(Exception ex) when(ex is InvalidDataException or JsonException or ModelContextException) {
                             row["title_verification_attempt"]=new JsonObject{["accepted"]=false,["reason"]="Title verification did not produce valid grounded evidence; full identification is still needed."};
                         }

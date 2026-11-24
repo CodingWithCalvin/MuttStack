@@ -27,7 +27,7 @@ public partial class MainWindow : Window
     public MainWindow(string stateRoot,string databasePath,Func<string,bool>? confirmRunDeletion=null) {
         this.confirmRunDeletion=confirmRunDeletion;
         root=stateRoot;Directory.CreateDirectory(root);Manager=new(root,databasePath);
-        InitializeComponent();
+        InitializeComponent();VersionText.Text="Mutt Stack · "+typeof(MainWindow).Assembly.GetName().Version?.ToString(3);
         folders.CollectionChanged+=(_,_)=>InvalidatePreview();stagedBatches.CollectionChanged+=(_,_)=>InvalidatePreview();
         Recursive.Checked+=(_,_)=>InvalidatePreview();Recursive.Unchecked+=(_,_)=>InvalidatePreview();
         var roaming=Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -172,7 +172,7 @@ public partial class MainWindow : Window
     void UpdateInboxBadge(int count){InboxCount.Text=count>99?"99+":count.ToString();InboxBadge.Visibility=count>0?Visibility.Visible:Visibility.Collapsed;var label=count==0?"Inbox":$"Inbox · {count} {(count==1?"batch":"batches")} awaiting review";NavInbox.ToolTip=label;System.Windows.Automation.AutomationProperties.SetName(NavInbox,label);}
     void RefreshInboxStatus(){RefreshScoutDelivery(true);if(page=="Inbox"){RefreshInbox();return;}try{UpdateInboxBadge(Manager.Database.PendingInboxCount());}catch(Exception ex){Error(ex);}}
     void RefreshInbox(){try{var selected=InboxGrid.SelectedItems.Cast<InboxItem>().Select(i=>i.Id).ToHashSet();var rows=Manager.Database.Inbox();InboxGrid.ItemsSource=rows;foreach(var row in rows.Where(r=>selected.Contains(r.Id)))InboxGrid.SelectedItems.Add(row);var pending=rows.Count(r=>r.Status=="Offered");UpdateInboxBadge(pending);InboxSummary.Text=$"{pending} awaiting review · {rows.Count(r=>r.Status=="Accepted")} accepted · {stagedBatches.Count} staged for {(appendRunId==null?"New Tucker":appendRunName)}";}catch(Exception ex){Error(ex);}}
-    void ImportManifest(object s,RoutedEventArgs e){var d=new OpenFileDialog{Filter="Doggo handoff JSON|*.json"};if(d.ShowDialog(this)!=true)return;try{Manager.Database.Offer(Handoff.Read(d.FileName));RefreshInbox();Status.Text="Handoff saved to the inbox. Review it before accepting.";}catch(Exception ex){Error(ex);}}
+    void ImportManifest(object s,RoutedEventArgs e){var d=new OpenFileDialog{Filter="Mutt Stack handoff JSON|*.json"};if(d.ShowDialog(this)!=true)return;try{Manager.Database.Offer(Handoff.Read(d.FileName));RefreshInbox();Status.Text="Handoff saved to the inbox. Review it before accepting.";}catch(Exception ex){Error(ex);}}
     void ReviewHandoff(object s,RoutedEventArgs e)
     {
         if(busy)return;

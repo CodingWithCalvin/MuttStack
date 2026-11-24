@@ -33,7 +33,7 @@ public partial class MainWindow
             InboxBadge.Visibility = pending.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             HandoffList.ItemsSource = pending;
             HandoffList.SelectedItem = pending.FirstOrDefault(b => b.Id == selected);
-            InboxSummary.Text = inbox == null ? "The inbox becomes available when Scout uses the shared Doggo database." :
+            InboxSummary.Text = inbox == null ? "The inbox becomes available when Scout uses the shared Mutt Stack database." :
                 pending.Count == 0 ? "Nothing waiting. Tucker can send completed outputs while Scout is closed." :
                 $"{pending.Count} {(pending.Count == 1 ? "batch" : "batches")} waiting. Accepting saves draft Scouts; processing starts when you choose Start Scout.";
             HandoffSelected(this, null!);

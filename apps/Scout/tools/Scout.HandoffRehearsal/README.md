@@ -1,4 +1,4 @@
-# Isolated Doggo contract rehearsal
+# Isolated Mutt Stack contract rehearsal
 
 This tool uses frozen synthetic Tucker-format contract messages and Scout's real receiver. It compiles only Scout-owned code. No companion checkout, encoder, model, live executable or live database is opened.
 

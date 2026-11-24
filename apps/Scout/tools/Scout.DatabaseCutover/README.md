@@ -2,7 +2,7 @@
 
 Scout now reads a persistent bootstrap file at `%LOCALAPPDATA%\Scout\storage.json`. It records the database mode/path and original logical settings/workspace roots. Normal launches, shortcuts, and taskbar entries use the same choice. Without this file, the existing standalone default remains. Invalid selections, missing selected databases, unsupported versions, and unfinished switches fail closed; they do not create a new empty database or silently reopen the old one. Settings shows the active database location.
 
-The file contains paths and a cutover ID, never credentials. Protected credential bytes remain in SQLite. Scout alone owns this selector. Ripley and Tucker read protected credentials directly from their configured Doggo database using their own adapters; removed or unavailable shared keys never fall back to standalone or loose-file copies.
+The file contains paths and a cutover ID, never credentials. Protected credential bytes remain in SQLite. Scout alone owns this selector. Ripley and Tucker read protected credentials directly from their configured Mutt Stack database using their own adapters; removed or unavailable shared keys never fall back to standalone or loose-file copies.
 
 `SCOUT_DATA_ROOT` selects an isolated bootstrap directory. `SCOUT_DOGGO_DATABASE`, `SCOUT_SETTINGS`, and `SCOUT_WORKSPACES` remain process-local test overrides and do not rewrite the persisted selection. Normal production launches need no environment override. Existing logical document paths must be preserved even when the physical database moves.
 

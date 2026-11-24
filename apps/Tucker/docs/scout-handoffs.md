@@ -1,6 +1,6 @@
 # Tucker to Scout handoffs
 
-This workflow uses the shared Doggo database. Its tests run against isolated databases; building and packaging do not change a live deployment.
+This workflow uses the shared Mutt Stack database. Its tests run against isolated databases; building and packaging do not change a live deployment.
 
 ## User flow
 

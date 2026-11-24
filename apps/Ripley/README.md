@@ -1,13 +1,15 @@
 # Ripley
 
+Part of **Mutt Stack**. Builds, installers and versions are coordinated by the [monorepo release pipeline](../../docs/releases.md). This app owns its application code and database adapter.
+
 [TMDB support, provider-aware paths and compatibility](docs/tmdb.md).
 
-A Windows desktop app for ripping discs with MakeMKV and sending completed raw files to Tucker for compression. The forest-green shell matches the Doggo app collection. Raw files and disc history are retained.
+A Windows desktop app for ripping discs with MakeMKV and sending completed raw files to Tucker for compression. The forest-green shell matches the Mutt Stack app collection. Raw files and disc history are retained.
 
 ## Quick start
 
 1. Open `artifacts\app\Ripley.exe` after building.
-2. Choose **New Ripley**, insert and inspect a disc, select its series, and set the raw folder and filename format. Ripley reads saved TMDB or TVDB credentials from the configured Doggo database.
+2. Choose **New Ripley**, insert and inspect a disc, select its series, and set the raw folder and filename format. Ripley reads saved TMDB or TVDB credentials from the configured Mutt Stack database.
 3. Choose **Rip disc**. MakeMKV saves raw files and per-file metadata. The minimum title length defaults to 120 seconds; all qualifying titles are ripped.
 4. When the run completes, choose **Send to Tucker**. Tucker can be closed. Delivery creates an inbox offer and locks the completed run against duplicate work.
 5. Open Tucker's **Inbox**, review the output and preset there, and add the batch to its waiting queue. Start compression in Tucker when ready.
@@ -74,7 +76,7 @@ Failed delivery exposes **Retry send to Tucker** and reuses the same ID. Offered
 
 After an interrupted send, Ripley restores and saves the run's lock from its local outbox before opening the shared database. If the database is unavailable, the original request stays frozen and can be retried when storage is available; a retry never creates a second offer or reopens an accepted request.
 
-Ripley owns `src/Ripley.Doggo`; all project references stay inside this repository. App integration uses the [Doggo database contract](docs/doggo-contract.md). Operational Ripley history and preferences remain local JSON.
+Ripley owns `src/Ripley.Doggo`; all project references stay inside this repository. App integration uses the [Mutt Stack database contract](docs/doggo-contract.md). Operational Ripley history and preferences remain local JSON.
 
 `tools/Ripley.Reconcile` validates completion sidecars, source size/mtime, output presence and media headers, then can explicitly record evidence in `ripley_completed_sources` and annotate history. Back up first and supply the backed-up history SHA256 when applying. This is evidence reconciliation rather than a full decode test; it creates no jobs and moves no media. Tucker skips these verified source signatures even through folder import.
 
@@ -97,9 +99,9 @@ Source is under `src\Ripley`; tests and fake tools are under `tests`. The mascot
 
 ## Scout shared storage compatibility
 
-Ripley's TVDB lookup reads the configured Doggo database directly using its own adapter. Scout must save credentials in that database. Rotated keys and PINs take effect on the next lookup; removed, ambiguous or unavailable credentials fail without searching private Scout files. Keys remain DPAPI-protected and are never copied into Ripley settings or logs.
+Ripley's TVDB lookup reads the configured Mutt Stack database directly using its own adapter. Scout must save credentials in that database. Rotated keys and PINs take effect on the next lookup; removed, ambiguous or unavailable credentials fail without searching private Scout files. Keys remain DPAPI-protected and are never copied into Ripley settings or logs.
 
-Updated Ripley holds a shared lease on Doggo storage while open. Database cutover requires an exclusive lease with the apps closed. Tests use isolated databases and synthetic protected credentials; builds and packages do not install apps or migrate live data.
+Updated Ripley holds a shared lease on Mutt Stack storage while open. Database cutover requires an exclusive lease with the apps closed. Tests use isolated databases and synthetic protected credentials; builds and packages do not install apps or migrate live data.
 ## Installers and CI
 
 `eng/test.ps1` validates this repository independently. `eng/package.ps1` builds an unsigned, self-contained Inno Setup installer in a new output directory. `eng/test-installer.ps1` checks isolated installation, upgrades, locked-file refusal, the installed app UI and uninstall with data preservation. GitHub Actions runs these checks per repository and creates draft releases for version tags without requiring signing credentials. See [Windows installers and releases](docs/releases.md).

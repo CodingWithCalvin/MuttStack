@@ -1,7 +1,14 @@
-; This installer and its build scripts belong only to Ripley.
-#define AppName "Ripley"
-#define AppIdentity "CodingWithCalvin.Ripley"
-#define AppTitle AppName
+; One Mutt Stack installer definition, parameterized by the app manifest.
+#ifndef AppName
+  #error AppName is required
+#endif
+#ifndef AppIdentity
+  #error AppIdentity is required
+#endif
+#ifndef AppIcon
+  #error AppIcon is required
+#endif
+#define AppTitle "Mutt Stack - " + AppName
 #define InstallRoot "{localappdata}\Programs\Coding With Calvin\" + AppName
 #define MenuRoot "{userprograms}\" + AppName
 #ifndef AppSource
@@ -21,7 +28,7 @@
   #undef AppIdentity
   #define AppIdentity ValidationId
   #undef AppTitle
-  #define AppTitle AppName + " installer validation"
+  #define AppTitle "Mutt Stack - " + AppName + " installer validation"
   #undef InstallRoot
   #define InstallRoot ValidationRoot + "\app with spaces"
   #undef MenuRoot
@@ -33,9 +40,9 @@ AppId={#AppIdentity}
 AppName={#AppTitle}
 AppVersion={#AppVersion}
 AppPublisher=Coding With Calvin
-AppPublisherURL=https://github.com/CodingWithCalvin/Ripley
-AppSupportURL=https://github.com/CodingWithCalvin/Ripley/issues
-AppUpdatesURL=https://github.com/CodingWithCalvin/Ripley/releases
+AppPublisherURL=https://github.com/CodingWithCalvin/MuttStack
+AppSupportURL=https://github.com/CodingWithCalvin/MuttStack/issues
+AppUpdatesURL=https://github.com/CodingWithCalvin/MuttStack/releases
 DefaultDirName={#InstallRoot}
 DisableDirPage=no
 DisableProgramGroupPage=yes
@@ -46,11 +53,11 @@ SetupArchitecture=x64
 MinVersion=10.0.19041
 OutputDir={#OutputRoot}
 OutputBaseFilename={#AppName}-{#AppVersion}-win-x64-setup
-SetupIconFile=..\src\Ripley\Assets\Ripley.ico
+SetupIconFile={#AppIcon}
 UninstallDisplayIcon={app}\{#AppName}.exe
 LicenseFile={#AppSource}\LICENSE.txt
 VersionInfoVersion={#AppVersion}
-VersionInfoDescription={#AppName} Setup
+VersionInfoDescription=Mutt Stack {#AppName} Setup
 VersionInfoCompany=Coding With Calvin
 WizardStyle=modern
 Compression=lzma2/normal

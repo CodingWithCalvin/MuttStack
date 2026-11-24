@@ -115,6 +115,18 @@ static class TitleCandidateTests {
    using var f=new Fixture(temp,"cache",["Silver Comet.mkv"],(_,n)=>n==1?Unsupported():throw new HttpRequestException("Stop broad fallback"));
    f.Run();Check(f.Starts==2);var logs=new Progress();f.Run(f.Settings with{Restart=true},logs);Check(f.Starts==3&&logs.Lines.Any(l=>l.Contains("Reusing exact-input title verification")));
   });
+  test("Shared-story coverage failure stays held without another full catalog search",()=>{
+   using var f=new Fixture(temp,"coverage-only",["Example.S03E11E12.Silver.Comet.mkv"],(request,_)=>{
+    Check(Source(request)["catalog"]==null,"Coverage-only failure must not trigger a broad search");
+    var audit=Audit();audit["recording"]!["kind"]="unresolved";audit["recording"]!["candidates"]=new JsonArray();
+    audit["installments"]=new JsonObject{["c0"]=new JsonArray(),["c1"]=new JsonArray()};return audit;
+   });
+   Data.Save(f.Settings.Catalog,new{episodes=new[]{Guide[0],Guide[0] with{Id=102,Number=12,Title="Silver Comet - Part 2"}}});
+   var progress=new Progress();var row=f.Run(progress:progress).Array("files").Single()!;
+    Check(f.Starts==2&&row.Array("candidates").Count==0&&row["reasoning"].Bool("coverage_review_only")&&row.Text("status")=="needs_review",
+     "Calls="+f.Starts+"; status="+row.Text("status")+"; "+row.Text("error")+"; "+string.Join(" | ",progress.Lines));
+   Check(progress.Lines.Any(l=>l.Contains("Skipping a redundant full-catalog search"))&&!progress.Lines.Any(l=>l.StartsWith("AI fallback [")));
+  });
   test("A wrong filename can be rejected and replaced by a different dialogue-supported episode",()=>{
    using var f=new Fixture(temp,"wrong-name-corrected",["Example.S01E04.Silver.Comet.mkv"],(request,n)=>n switch {
     1=>Unsupported(),2=>new JsonObject{["candidates"]=new JsonArray(102),["search_more"]=false},_=>Audit(offset:2)});

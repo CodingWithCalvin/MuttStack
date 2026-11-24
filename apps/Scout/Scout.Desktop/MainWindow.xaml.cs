@@ -19,9 +19,9 @@ public partial class MainWindow : Window
     private ScoutPause? pauseRequest;
     private bool forceStopRequested;
     public MainWindow() {
-        InitializeComponent();outputPath=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"Scout");
+        InitializeComponent();VersionText.Text="Mutt Stack · "+typeof(MainWindow).Assembly.GetName().Version?.ToString(3);outputPath=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"Scout");
         LoadSettings();workspaces.ReadAll(true);RefreshHistory();ShowPage("Session");Closing+=OnClosing;InitializeInbox();
-        if(ScoutStorage.For(workspaces.Root) is {} storage)StorageSummary.Text=(storage.UsesDoggo?"Shared Doggo database":"Scout database")+" · "+storage.Path;
+        if(ScoutStorage.For(workspaces.Root) is {} storage)StorageSummary.Text=(storage.UsesDoggo?"Shared Mutt Stack database":"Scout database")+" · "+storage.Path;
     }
     private string currentPage="Session";
     private void ShowPage(string name) {

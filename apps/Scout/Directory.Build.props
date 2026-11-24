@@ -1,1 +1,2 @@
-<Project><PropertyGroup><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><LangVersion>preview</LangVersion><Version>0.9.12-ui-trial</Version><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup></Project>
+<Project>
+  <Import Project="../../build/MuttStack.props" /><PropertyGroup><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><LangVersion>preview</LangVersion><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup></Project>

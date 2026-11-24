@@ -2,7 +2,6 @@
   "project": "Scout.Desktop/Scout.Desktop.csproj",
   "solution": "Scout.slnx",
   "logo": "Scout.Desktop/Assets/Scout.png",
-  "version": "0.9.12.0",
   "tests": [
     "Scout.Tests/Scout.Tests.csproj",
     "Scout.Desktop.Tests/Scout.Desktop.Tests.csproj"

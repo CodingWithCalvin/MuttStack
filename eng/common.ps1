@@ -1,8 +1,10 @@
 #requires -Version 7.0
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
-$script:RepoRoot=Split-Path $PSScriptRoot -Parent
-$script:PackageConfig=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'package.json') -Raw | ConvertFrom-Json
+$script:StackRoot=Split-Path $PSScriptRoot -Parent
+$script:RepoRoot=Join-Path $StackRoot ('apps/'+$Application)
+$script:PackageConfig=Get-Content -LiteralPath (Join-Path $RepoRoot 'eng/package.json') -Raw | ConvertFrom-Json
+$script:StackVersion=& (Join-Path $PSScriptRoot 'version.ps1')
 function Invoke-Dotnet([string[]]$Arguments) {
     & $DotnetPath @Arguments
     if($LASTEXITCODE -ne 0){throw ('dotnet failed: '+($Arguments -join ' '))}
@@ -27,7 +29,8 @@ function Invoke-InstallerProcess([string]$File,[string[]]$Arguments,[int]$Timeou
 function Invoke-InnoCompiler([string]$Compiler,[string]$Source,[string]$Version,[string]$Output,[string]$ValidationRoot='',[string]$ValidationId='') {
     $arguments=@('--quiet','--no-ide-signtools','--no-signing',('--define=AppSource='+$Source),('--define=AppVersion='+$Version),('--define=OutputRoot='+$Output))
     if($ValidationRoot){$arguments+=@(('--define=ValidationRoot='+$ValidationRoot),('--define=ValidationId='+$ValidationId))}
-    $arguments+=Join-Path $RepoRoot 'installer/app.iss'
+    $arguments+=@(('--define=AppName='+$PackageConfig.name),('--define=AppIdentity='+$PackageConfig.appId),('--define=AppIcon='+(Join-Path $RepoRoot $PackageConfig.icon)))
+    $arguments+=Join-Path $StackRoot 'installer/app.iss'
     & $Compiler @arguments
     if($LASTEXITCODE -ne 0){throw 'Inno Setup compilation failed.'}
 }

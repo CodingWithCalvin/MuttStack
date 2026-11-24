@@ -1,0 +1,10 @@
+<Project>
+  <!-- The only product version. All apps and installers use this value. -->
+  <PropertyGroup>
+    <MuttStackVersion>0.10.0</MuttStackVersion>
+    <Version>$(MuttStackVersion)</Version>
+    <AssemblyVersion>$(MuttStackVersion).0</AssemblyVersion>
+    <FileVersion>$(MuttStackVersion).0</FileVersion>
+    <Product>Mutt Stack</Product>
+  </PropertyGroup>
+</Project>

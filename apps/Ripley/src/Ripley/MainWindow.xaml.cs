@@ -66,7 +66,7 @@ public partial class MainWindow : Window
     void FolderBrowse(TextBox box,string title){var d=new OpenFolderDialog{Title=title};if(d.ShowDialog(this)==true)box.Text=d.FolderName;}
     void FileBrowse(TextBox box,string filter){var d=new OpenFileDialog{Filter=filter};if(d.ShowDialog(this)==true)box.Text=d.FileName;}
     void BrowseRaw(object s,RoutedEventArgs e)=>FolderBrowse(RawFolder,"Raw-rip destination · originals are kept");
-    void BrowseScout(object s,RoutedEventArgs e)=>FileBrowse(ScoutFolder,"Doggo database|*.db");
+    void BrowseScout(object s,RoutedEventArgs e)=>FileBrowse(ScoutFolder,"Mutt Stack database|*.db");
     void BrowseMakeMkv(object s,RoutedEventArgs e)=>FileBrowse(MakeMkv,"MakeMKV console|*.exe");
     async void SearchSeries(object s,RoutedEventArgs e)
     {

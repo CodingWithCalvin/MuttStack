@@ -304,6 +304,7 @@ ReferenceValidationTests.Run(Test,temp);
 SubtitleIdentityTests.Run(Test,temp);
 SubtitleRetrievalTests.Run(Test,temp);
 TitleCandidateTests.Run(Test,temp);
+WholeWorkTests.Run(Test);
 VerificationRecoveryTests.Run(Test);
 OpenSubtitlesTests.Run(Test,temp);
 SubtitleReliabilityTests.Run(Test,temp);

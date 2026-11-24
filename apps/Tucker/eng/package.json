@@ -2,7 +2,6 @@
   "project": "src/Tucker/Tucker.csproj",
   "solution": "CodingWithCalvin.Tucker.slnx",
   "logo": "src/Tucker/Assets/Tucker.png",
-  "version": "0.1.0.0",
   "tests": [
     "tests/Tucker.Tests/Tucker.Tests.csproj",
     "tests/Tucker.Desktop.Tests/Tucker.Desktop.Tests.csproj"

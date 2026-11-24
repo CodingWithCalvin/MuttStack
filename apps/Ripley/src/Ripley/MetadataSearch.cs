@@ -17,7 +17,7 @@ public static class MetadataSearch
     public static async Task<List<SeriesIdentity>> SearchAsync(HttpClient http,string query,string provider,string key,string? pin=null,CancellationToken ct=default)
     {
         Validate(query,provider);
-        if(string.IsNullOrWhiteSpace(key))throw new IOException($"Configure {provider.ToUpperInvariant()} credentials in Scout using the shared Doggo database.");
+        if(string.IsNullOrWhiteSpace(key))throw new IOException($"Configure {provider.ToUpperInvariant()} credentials in Scout using the shared Mutt Stack database.");
         string root=provider=="tmdb"?"https://api.themoviedb.org/3/":"https://api4.thetvdb.com/v4/";
         string bearer=key;
         if(provider=="tvdb") {

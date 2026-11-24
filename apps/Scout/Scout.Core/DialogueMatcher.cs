@@ -9,10 +9,10 @@ public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? 
 {
     private readonly ModelTransport transport=new(client,options??new(),beforeRequest,activity);
     public IDisposable ForSource(string name)=>transport.ForSource(name);
-    public string CacheScope=>transport.CacheScope;
+    public string CacheScope=>transport.CacheScope+"|"+ExtentCacheScope;
     public UsageSnapshot Usage=>transport.Usage;
     public Uri ValidateEndpoint(string endpoint)=>transport.ValidateEndpoint(endpoint);
-    public const string RequestRevision="compact-evidence-retrieval-v24-shared-guides";
+    public const string RequestRevision="compact-evidence-retrieval-v25-complete-works";
     public const string Version="verified-dialogue-v7-multipart1";
     private static string Asset(string name) {
         using var stream=typeof(DialogueMatcher).Assembly.GetManifestResourceStream("Scout.Core.Assets."+name)??throw new InvalidOperationException("Missing matcher asset.");
@@ -198,7 +198,9 @@ public sealed partial class DialogueMatcher(HttpClient client,InferenceOptions? 
         if(matches.Count>1) {
             var chosen=matches.Select(m=>episodes.Single(e=>e.Id==m.Int("episode_id"))).ToArray();
             if(!EpisodeRange.Valid(chosen))throw AssignmentValidation.Reject(AssignmentIssue.NonConsecutiveEpisodes,"Combined episodes must be consecutive in one season and playback order. This incompatible assignment is held without an identity-repair retry.");
-            if(chosen.Zip(chosen.Skip(1)).Any(pair=>Indices(checks[pair.First.Title]["supporting_blocks"]).Max()>=Indices(checks[pair.Second.Title]["supporting_blocks"]).Min()))throw AssignmentValidation.Reject(AssignmentIssue.OverlappingStories,"Combined episodes need distinct ordered dialogue evidence. This incompatible assignment is held without an identity-repair retry.");
+            bool wholeWork=result["whole_work_audit"]!=null&&WholeWorkGrounding.ValidProof(result,blocks,chosen);
+            if(result["whole_work_audit"]!=null&&!wholeWork)throw new InvalidDataException("Invalid complete-work coverage proof.");
+            if(!wholeWork&&chosen.Zip(chosen.Skip(1)).Any(pair=>Indices(checks[pair.First.Title]["supporting_blocks"]).Max()>=Indices(checks[pair.Second.Title]["supporting_blocks"]).Min()))throw AssignmentValidation.Reject(AssignmentIssue.OverlappingStories,"Combined episodes need distinct ordered dialogue evidence. This incompatible assignment is held without an identity-repair retry.");
         }
         var selected=matches.Select(n=>n.Int("episode_id")).ToHashSet();
         foreach(var node in result.Array("alternatives")) {

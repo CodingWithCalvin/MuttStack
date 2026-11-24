@@ -1,5 +1,7 @@
 # Tucker
 
+Part of **Mutt Stack**. Builds, installers and versions are coordinated by the [monorepo release pipeline](../../docs/releases.md). This app owns its application code and database adapter.
+
 [TMDB support, provider-aware paths and compatibility](docs/tmdb.md).
 
 Independent Windows WPF compression companion to Ripley and Scout. Amber/copper shell and a dachshund mascot with a copper flat cap and Tucker name tag.
@@ -50,15 +52,15 @@ To process an accepted batch again, select it in **Inbox** and choose **Re-accep
 
 Folder imports can also be retried without an inbox batch. In the combined preview, select the **Already imported** rows you want and choose **Reprocess selected**. This status records an earlier import, not proof that encoding finished; it can remain after deleting a waiting run. Only the selected files become **Ready to reprocess**. **Already queued** files still have unfinished work and cannot be duplicated. **Reset reprocessing** clears the per-file choices; changing sources or generating a fresh preview also clears them. Save with **Create Tucker** or **Add as waiting** to commit the selected work. These choices apply only to that preview, keep the current output/preset settings, and never erase import history, inbox receipts or completed media.
 
-**Ripley sending is connected.** Use Send to Tucker on a newly completed Ripley run; it appears in TuckerÃ¢â‚¬â„¢s inbox. Existing completed compression is reconciled through a Ripley-owned completion ledger and skipped during Tucker import. Tucker Ã¢â€ â€™ Scout receiving is implemented for isolated testing: select a saved run and choose **Send to Scout** to offer its newly completed outputs. Scout accepts them into waiting drafts, and Tucker picks up the durable response on startup or refresh. Scout must use the same Doggo database to receive these batches. See [the Scout handoff workflow](docs/scout-handoffs.md). Tucker retains compatible `.ripley.json` output sidecars for downstream metadata.
+**Ripley sending is connected.** Use Send to Tucker on a newly completed Ripley run; it appears in TuckerÃ¢â‚¬â„¢s inbox. Existing completed compression is reconciled through a Ripley-owned completion ledger and skipped during Tucker import. Tucker Ã¢â€ â€™ Scout receiving is implemented for isolated testing: select a saved run and choose **Send to Scout** to offer its newly completed outputs. Scout accepts them into waiting drafts, and Tucker picks up the durable response on startup or refresh. Scout must use the same Mutt Stack database to receive these batches. See [the Scout handoff workflow](docs/scout-handoffs.md). Tucker retains compatible `.ripley.json` output sidecars for downstream metadata.
 
 ## Development and verification
 
 `scripts\build.ps1 -HandBrakeCli <existing HandBrakeCLI.exe>` publishes to the gitignored `artifacts\app` folder. `scripts\test.ps1` runs inherited media/preset/naming safety checks, Tucker SQLite/queue tests, and WPF workflow checks with fake CLI tools and temporary media. It never performs a real encode. Windows-provided `winsqlite3.dll` is accessed through a small parameterized wrapper; no database server or third-party NuGet packages are required.
 
-Compression/preset/naming components were adapted from Ripley at recorded commit `f6ba719`; the existing MIT license is retained. Tucker owns its local `src/Doggo.Handoffs` adapter. No other repository references or source-links it. Integration is exclusively through the [Doggo database contract](docs/doggo-contract.md).
+Compression/preset/naming components were adapted from Ripley at recorded commit `f6ba719`; the existing MIT license is retained. Tucker owns its local `src/Doggo.Handoffs` adapter. No other repository references or source-links it. Integration is exclusively through the [Mutt Stack database contract](docs/doggo-contract.md).
 
-Tucker reads protected TVDB credentials only from its selected Doggo database when needed. It never reads Scout's storage selector or standalone credentials. The current Tucker handoff UI does not require TVDB credentials. Database maintenance uses a database-scoped storage lease.
+Tucker reads protected TVDB credentials only from its selected Mutt Stack database when needed. It never reads Scout's storage selector or standalone credentials. The current Tucker handoff UI does not require TVDB credentials. Database maintenance uses a database-scoped storage lease.
 ## Installers and CI
 
 `eng/test.ps1` validates this repository independently. `eng/package.ps1` builds an unsigned, self-contained Inno Setup installer in a new output directory. `eng/test-installer.ps1` checks isolated installation, upgrades, locked-file refusal, the installed app UI and uninstall with data preservation. GitHub Actions runs these checks per repository and creates draft releases for version tags without requiring signing credentials. See [Windows installers and releases](docs/releases.md).

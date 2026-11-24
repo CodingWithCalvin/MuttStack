@@ -34,7 +34,7 @@ static class InboxDesktopTests
             T C<T>(string name) => (T)window.FindName(name);
             void Click(string name) => C<Button>(name).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(C<TextBlock>("InboxCount").Text == "1" && C<Border>("InboxBadge").Visibility == Visibility.Visible, "Scout shows a waiting handoff badge at startup");
-            Check(C<TextBlock>("StorageSummary").Text.Contains("Shared Doggo database") && C<TextBlock>("StorageSummary").Text.Contains(db.Path), "Scout settings identify the selected shared database");
+            Check(C<TextBlock>("StorageSummary").Text.Contains("Shared Mutt Stack database") && C<TextBlock>("StorageSummary").Text.Contains(db.Path), "Scout settings identify the selected shared database");
             Click("NavInbox"); C<ListBox>("HandoffList").SelectedIndex = 0;
             Check(C<Grid>("InboxPage").Visibility == Visibility.Visible && C<Button>("AcceptHandoffButton").IsEnabled && C<TextBox>("HandoffDetails").Text.Contains("episode.mkv"), "Scout inbox previews exact compressed output before acceptance");
             var renderDirectory = Environment.GetEnvironmentVariable("SCOUT_TEST_RENDERS");

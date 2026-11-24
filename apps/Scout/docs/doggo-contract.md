@@ -1,4 +1,4 @@
-# Doggo database contract
+# Mutt Stack database contract
 
 Each app owns all of its implementation, tests, packaging and workflows in its own repository. There are no sibling project references, source links, shared private packages, cross-repository workflows or reads of another app's private configuration. Similar adapter code is independently maintained; compatibility is defined by the database contract, not a shared library.
 

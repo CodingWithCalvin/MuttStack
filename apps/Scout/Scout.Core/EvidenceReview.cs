@@ -114,7 +114,10 @@ public sealed record EvidenceReview(string Assessment,string Suggestion,IReadOnl
     if(quotes.Count==0)sections.Add(new("Dialogue evidence","No dialogue excerpts saved for this suggestion. Filename/catalog matching does not verify video content."));
    }
    if(reasoning?["shared_guide_grounding"] is JsonObject sharedGuide) {
-    sections.Add(new("Shared multipart guide","The provider repeats one synopsis across the numbered parts. The whole-story guide was checked once; each installment also has distinct ordered dialogue evidence."));
+    sections.Add(new("Shared multipart guide",reasoning?["whole_work_audit"]!=null?
+     "The provider repeats one synopsis across the numbered parts. The complete continuous work was verified using its opening, development and ending, with measured runtime corroboration. No exact installment cut point is asserted.":
+     "The provider repeats one synopsis across the numbered parts. The whole-story guide was checked once; see the saved installment evidence and coverage decision."));
+    foreach(var stage in reasoning.Array("whole_work_evidence"))sections.Add(new("Whole-story "+stage.Text("stage"),stage.Text("source_quote")));
     foreach(var fact in sharedGuide.Array("candidate_checks").SelectMany(c=>c.Array("guide_grounding")))
      sections.Add(new("Shared guide statement · "+fact.Text("verdict").Replace('_',' '),fact.Text("guide_text")+"\n"+
       string.Join("\n",fact.Array("evidence").Select(q=>q.Text("source_quote",q.Text("quote"))))));

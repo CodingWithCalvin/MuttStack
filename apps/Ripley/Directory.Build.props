@@ -1,4 +1,5 @@
 <Project>
+  <Import Project="../../build/MuttStack.props" />
   <PropertyGroup>
     <UseArtifactsOutput>true</UseArtifactsOutput>
     <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath>

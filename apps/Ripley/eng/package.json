@@ -2,7 +2,6 @@
   "project": "src/Ripley/Ripley.csproj",
   "solution": "CodingWithCalvin.Ripley.slnx",
   "logo": "src/Ripley/Assets/Ripley.png",
-  "version": "0.1.0.0",
   "tests": [
     "tests/Ripley.Tests/Ripley.Tests.csproj",
     "tests/Ripley.Desktop.Tests/Ripley.Desktop.Tests.csproj",

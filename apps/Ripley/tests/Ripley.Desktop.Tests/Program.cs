@@ -53,7 +53,7 @@ partial class Program
         Check(Control<ComboBox>(providerWindow,"SeriesProvider").SelectedIndex==1,"Explicit TVDB search choice survives reopening");providerWindow.Close();
         Control<ComboBox>(window,"SeriesProvider").SelectedIndex=0;
 
-        Check(window.Title=="Ripley"&&window.WindowStyle==WindowStyle.None&&WindowChrome.GetWindowChrome(window).CaptionHeight==38,"Ripley keeps Scout's custom shell");
+        Check(window.Title=="Ripley — Mutt Stack"&&window.WindowStyle==WindowStyle.None&&WindowChrome.GetWindowChrome(window).CaptionHeight==38,"Ripley carries Mutt Stack branding and keeps Scout's custom shell");
         foreach(var page in new[]{"Rip","Settings"}) {
             Call(window,"ShowPage",page);
             Check(Control<FrameworkElement>(window,page+"Page").Visibility==Visibility.Visible&&Control<FrameworkElement>(window,(page=="Rip"?"Settings":"Rip")+"Page").Visibility==Visibility.Collapsed,"Navigation selects only "+page);

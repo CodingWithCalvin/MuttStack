@@ -48,7 +48,7 @@ public sealed partial class DialogueMatcher
         if(proposed.Count==0)return Finish(Empty());
         proposed=EpisodeCoverage.SharedGroup(proposed,catalog).ToList();
         var result=await AuditSpansAsync(cues,proposed,model,endpoint,ct,fullSearch?2:proposed.Count>1?2:1,broadened?null:selection);
-        if(result.Text("assessment")!="supported"&&!broadened) {
+        if(result.Text("assessment")!="supported"&&!result.Bool("coverage_review_only")&&!broadened) {
             var broader=await Broaden();
             broader=EpisodeCoverage.SharedGroup(broader,catalog).ToList();
             if(broader.Count>0&&!broader.Select(e=>e.Id).SequenceEqual(proposed.Select(e=>e.Id))) {
@@ -69,6 +69,8 @@ public sealed partial class DialogueMatcher
     private async Task<JsonObject> AuditSpansAsync(IReadOnlyList<Cue> cues,IReadOnlyList<Episode> episodes,string model,string endpoint,CancellationToken ct,int passes=2,EvidenceSelection? selected=null) {
         var blocks=Blocks(cues);var spans=DialogueEvidence.Spans(blocks);
         bool shared=EpisodeCoverage.HasSharedDescription(episodes);
+        var extent=recordingExtent.Value;
+        bool wholeWork=shared&&extent?.Supports(episodes.Count)==true;
         if(shared)passes=2;
         var guideEpisodes=shared?new[]{episodes[0]}:episodes;
         var guides=new JsonObject();
@@ -83,10 +85,11 @@ public sealed partial class DialogueMatcher
         async Task<JsonObject> Call(bool full,int pass,string? validationError=null) {
             var included=full?null:selected!.Blocks;var visible=spans.Where(s=>included==null||included.Contains(s.Block)).ToArray();
             var template=JsonNode.Parse(Asset("span-grounded-schema.json"))!.AsObject();
-            var schema=shared?SharedGuideGrounding.Schema(template,visible,episodes):CompactGrounding.Schema(template,visible,episodes);
+            var schema=wholeWork?WholeWorkGrounding.Schema(template,visible,episodes):shared?SharedGuideGrounding.Schema(template,visible,episodes):CompactGrounding.Schema(template,visible,episodes);
             if(!full) {schema["properties"]!["full_dialogue_required"]=new JsonObject{["type"]="boolean"};schema.Array("required").Add("full_dialogue_required");}
             var source=EvidenceInput(spans,blocks.Count,included);source["candidates"]=guides.DeepClone();source["catalog_relationship"]=relationship.DeepClone();
-            source["stage_instructions"]=Asset(shared?"shared-guide-prompt.txt":"span-grounded-prompt.txt")+(!full?"\nThis request contains selected original passages with explicit gaps, NOT the complete dialogue. Return full_dialogue_required=true if missing context is needed for any guide statement, chronology, another story, promo/recap distinction or recording completeness. Missing passages cannot establish that events are absent. Only a supported single complete episode can take the evidence route; all other outcomes receive full dialogue. Never claim to have inspected omitted passages.":"");
+            source["stage_instructions"]=Asset(wholeWork?"whole-work-prompt.txt":shared?"shared-guide-prompt.txt":"span-grounded-prompt.txt")+(!full?"\nThis request contains selected original passages with explicit gaps, NOT the complete dialogue. Return full_dialogue_required=true if missing context is needed for any guide statement, chronology, another story, promo/recap distinction or recording completeness. Missing passages cannot establish that events are absent. Only a supported single complete episode can take the evidence route; all other outcomes receive full dialogue. Never claim to have inspected omitted passages.":"");
+            if(wholeWork)source["measured_extent"]=JsonSerializer.SerializeToNode(new{extent!.DurationSeconds,extent.TypicalSeconds,verifiedSingleEpisodes=extent.SingleEpisodeSeconds.Length},Data.Options);
             source["task"]=full?(pass==0?"Audit every guide statement and classify the COMPLETE recording. Cite span IDs only.":"Independently audit every guide statement and classify the COMPLETE recording. Cite span IDs only."):"Audit the supplied evidence. Request the complete dialogue if it cannot safely establish one episode and its coverage.";
             if(validationError!=null)source["validation_feedback"]="The previous audit failed validation: "+validationError+" Recheck the SAME candidates against the original dialogue. Do not change identities, fabricate evidence or force support to satisfy validation. Return unresolved when coverage or any guide statement cannot be established. This is one bounded evidence retry.";
             if(validationError!=null)source["task"]=source.Text("task")+"\n"+source.Text("validation_feedback");
@@ -99,7 +102,8 @@ public sealed partial class DialogueMatcher
                 decision.Remove("full_dialogue_required");
             }
             CompactGrounding.ValidateVisibleCitations(decision,visible);
-            var result=shared?SharedGuideGrounding.Expand(decision,spans,blocks,episodes):CompactGrounding.ExpandKeyed(decision,spans,blocks,episodes);
+            var result=wholeWork?WholeWorkGrounding.Expand(decision,spans,blocks,episodes,extent!):shared?SharedGuideGrounding.Expand(decision,spans,blocks,episodes):CompactGrounding.ExpandKeyed(decision,spans,blocks,episodes);
+            if(wholeWork)DialogueMatcher.Validate(result,blocks,episodes,true,requireContentType:true);
             if(!full&&(result.Text("assessment")!="supported"||result.Text("coverage")!="complete"||result["recording_decision"].Text("kind")!="single_episode"))throw new InvalidDataException("Evidence audit did not establish a complete single episode.");
             if(!full) {
                 var support=result.Array("candidate_checks").SelectMany(c=>c.Array("guide_grounding")).SelectMany(f=>f.Array("evidence")).Select(e=>e.Int("block")).Distinct().Order().ToArray();
@@ -127,6 +131,10 @@ public sealed partial class DialogueMatcher
             if(audits.Select(Decision).Distinct().Count()!=1)throw new InvalidDataException("Independent compact coverage audits disagree. No assignment accepted.");
             var result=audits[^1];result["grounded_verification"]=new JsonObject{["method"]="compact-original-span-audits-v6",["passes"]=audits.Count,["full_dialogue"]=!excerpts,
                 ["included_blocks"]=excerpts?selected!.Blocks.Count:blocks.Count,["total_blocks"]=blocks.Count,["fallback_reason"]=fallback,["candidate_ids"]=JsonSerializer.SerializeToNode(episodes.Select(e=>e.Id)),["raw_audits"]=rawAudits.DeepClone()};
+            if(shared&&audits.Count>=2&&audits.All(a=>WholeWorkGrounding.CoverageOnly(a,episodes))) {
+                result["coverage_review_only"]=true;
+                result["summary"]="The shared story guide is supported, but complete coverage of its numbered parts remains uncertain. Held for coverage review; another full-catalog search would not establish missing installment evidence.";
+            }
             result["method"]=Version;result["model"]=model;result["request_revision"]=RequestRevision;result["dialogue_hash"]=CollectionResolver.Hash(JsonSerializer.Serialize(cues,Data.Options));return result;
         }catch(Exception ex){if(rawAudits.Count>0&&rawAudits[^1]?["error"]==null)rawAudits[^1]!["error"]=ex.Message;ex.Data["model_attempts"]=rawAudits.ToJsonString();ex.Data["model_candidate_ids"]=JsonSerializer.Serialize(episodes.Select(e=>e.Id));throw;}
     }

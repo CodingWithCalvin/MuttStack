@@ -7,7 +7,7 @@ public partial class MainWindow
     string currentPage="Rip";
     void InitializeShell()
     {
-        VersionText.Text=typeof(MainWindow).Assembly.GetName().Version?.ToString(3)??"Ripley";
+        VersionText.Text="Mutt Stack · "+typeof(MainWindow).Assembly.GetName().Version?.ToString(3);
         ShowPage("Rip");
     }
     void ShowPage(string page)

@@ -14,6 +14,7 @@ public static class ConflictReview {
   foreach(var row in rows)row["conflict_review_pending"]=true;checkpoint();
   foreach(var row in rows) {
    pause?.Checkpoint();ct.ThrowIfCancellationRequested();
+   using var extent=matcher.ForRecording(RecordingExtent.FromRow(row,report,catalog));
    var signature=Signature(MultipartEvidence.Cues(row),catalog,matcher,model,endpoint);
    progress.Report("Full-guide conflict review: "+Path.GetFileName(row.Text("path")));
    using var source=matcher.ForSource(Path.GetFileName(row.Text("path")));

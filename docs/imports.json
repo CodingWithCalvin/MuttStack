@@ -1,0 +1,23 @@
+[
+  {
+    "app": "Scout",
+    "repository": "https://github.com/CodingWithCalvin/Scout",
+    "commit": "d4575d3af8b71278df9d8cbc57cb699b900a1521",
+    "directory": "apps/Scout",
+    "history": "preserved without squashing"
+  },
+  {
+    "app": "Ripley",
+    "repository": "https://github.com/CodingWithCalvin/Ripley",
+    "commit": "96e5b9f9464c01c68dcfa022e78708a6978ffa68",
+    "directory": "apps/Ripley",
+    "history": "preserved without squashing"
+  },
+  {
+    "app": "Tucker",
+    "repository": "https://github.com/CodingWithCalvin/Tucker",
+    "commit": "3da32d6acb77f0f8b18faf4c8e884da89f95b317",
+    "directory": "apps/Tucker",
+    "history": "preserved without squashing"
+  }
+]

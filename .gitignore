@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+**/.build/
+**/artifacts/
+.vs/
+*.user
+*.suo
+.env*
+*.db*
+*.pfx
+*.p12
+*.key
+*.log
+**/__pycache__/

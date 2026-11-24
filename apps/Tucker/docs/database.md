@@ -1,4 +1,4 @@
-# Doggo storage â€” Tucker implementation
+# Mutt Stack storage â€” Tucker implementation
 
 One local SQLite file, WAL mode, foreign keys, synchronous FULL and a bounded busy timeout. Work runs outside database transactions. Prefixes are ownership conventions, not security boundaries. Windows file permissions protect access.
 
@@ -30,4 +30,4 @@ This is a per-Windows-user local database. The Inno Setup installer packages eac
 
 The additive [Tucker to Scout workflow](scout-handoffs.md) is tested with isolated databases. Scout owns its receipt and file tables and commits acceptance with its workspace documents. The legacy Ripley to Tucker tables and versions remain unchanged.
 
-Updated Tucker holds a shared storage lease for its database while open. Scout cutover maintenance requires an exclusive lease, so a running Tucker blocks it. Credential lookup reads only the selected Doggo database; it does not inspect Scout's storage selector or fall back to standalone keys.
+Updated Tucker holds a shared storage lease for its database while open. Scout cutover maintenance requires an exclusive lease, so a running Tucker blocks it. Credential lookup reads only the selected Mutt Stack database; it does not inspect Scout's storage selector or fall back to standalone keys.

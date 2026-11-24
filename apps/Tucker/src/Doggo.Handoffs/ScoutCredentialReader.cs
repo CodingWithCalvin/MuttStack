@@ -11,7 +11,7 @@ public static class ScoutCredentialReader
     public static (string Key,string? Pin) Read(string databasePath,string provider)
     {
         if(provider is not ("tvdb" or "tmdb"))throw new ArgumentException("Choose TMDB or TVDB.",nameof(provider));
-        if(!Path.IsPathFullyQualified(databasePath)||!File.Exists(databasePath))throw new FileNotFoundException("Choose the shared Doggo database containing saved metadata credentials.",databasePath);
+        if(!Path.IsPathFullyQualified(databasePath)||!File.Exists(databasePath))throw new FileNotFoundException("Choose the shared Mutt Stack database containing saved metadata credentials.",databasePath);
         using var lease=StorageLease.Acquire(false,databasePath);
         using var db=new Sqlite(databasePath,readOnly:true);
         foreach(var component in new[]{"doggo","scout"})

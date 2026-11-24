@@ -1,6 +1,6 @@
 # TMDB catalogs and multipart recordings
 
-New settings default to TMDB. Saved provider choices, existing Scouts and their catalogs stay unchanged. Configure the **API Read Access Token** under **Settings > Show discovery**. It is encrypted for the current Windows account in the selected database. Ripley can read that credential from the same Doggo database; no credential is bundled or copied into either repository.
+New settings default to TMDB. Saved provider choices, existing Scouts and their catalogs stay unchanged. Configure the **API Read Access Token** under **Settings > Show discovery**. It is encrypted for the current Windows account in the selected database. Ripley can read that credential from the same Mutt Stack database; no credential is bundled or copied into either repository.
 
 Scout requests English TMDB series and season details. A `{tvdb-...}` folder can suggest a TMDB series through a forward external-ID lookup and a confirming reverse lookup. This identifies the series only: TMDB's episode IDs, titles and season numbering still control matching and output. To process an existing TVDB library against TMDB, create a new Scout, select TMDB and confirm the series. An already processed Scout cannot switch providers in place. There is no automatic retagging or conversion of existing files.
 

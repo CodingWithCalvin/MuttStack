@@ -1,5 +1,7 @@
 # Scout
 
+Part of **Mutt Stack**. Builds, installers and versions are coordinated by the [monorepo release pipeline](../../docs/releases.md). This app owns its application code and database adapter.
+
 [TMDB support, provider-aware paths and compatibility](docs/tmdb.md).
 
 A Windows desktop app for identifying TV episodes from video dialogue, reviewing the evidence, and organizing files into episode names and season folders.
@@ -129,7 +131,7 @@ Fresh installations start directly with SQLite. Existing database contents remai
 
 The versioned schema uses document records for settings/history/guides/caches and a separate indexed `file_results` table for each report's file checkpoints. Credentials remain DPAPI-encrypted blobs. Reads and checkpoint replacements are transactional, with WAL and full synchronous writes. A newer unsupported schema is rejected rather than downgraded.
 
-Scout also supports a staged Doggo database backend with its own `scout_` tables. It is **opt-in only**: normal startup keeps the current Scout database. The isolated rehearsal command uses SQLite online backups and verifies saved results, encrypted credential bytes, and unrelated app tables. See [Doggo database support](docs/doggo-database.md) before testing a copy; the persistent selector controls which database normal launches use.
+Scout also supports a staged Mutt Stack database backend with its own `scout_` tables. It is **opt-in only**: normal startup keeps the current Scout database. The isolated rehearsal command uses SQLite online backups and verifies saved results, encrypted credential bytes, and unrelated app tables. See [Mutt Stack database support](docs/doggo-database.md) before testing a copy; the persistent selector controls which database normal launches use.
 
 Right-click a Scout in the sidebar history to **Archive** or **Delete** it. **Show archived** reveals archived Scouts with **Restore from archive** in their context menu. Deletion retains saved data and supports Undo delete; archiving and deletion never change videos. Active Scouts cannot be archived or deleted.
 
@@ -240,7 +242,7 @@ dotnet run --project Scout.Tests -c Release -- --metadata-smoke
 
 ### Tucker inbox
 
-With prepared Doggo storage, **Inbox** shows compressed outputs sent by Tucker and a badge for waiting batches. Accepting saves draft Scouts grouped by series, with exact file selections; it does not start processing. Acceptance persists while Tucker is closed. Normal startup uses the standalone Scout database until the [cutover tool](tools/Scout.DatabaseCutover/README.md) saves a persistent Doggo selection. Future launches and taskbar entries honor that choice. The tool supports explicit, guarded cutover; tests and installers never switch storage automatically. See [Doggo storage](docs/doggo-database.md) and [the isolated handoff rehearsal](tools/Scout.HandoffRehearsal/README.md). Scout owns its local adapter and builds without a companion checkout. See the [database contract](docs/doggo-contract.md).
+With prepared Mutt Stack storage, **Inbox** shows compressed outputs sent by Tucker and a badge for waiting batches. Accepting saves draft Scouts grouped by series, with exact file selections; it does not start processing. Acceptance persists while Tucker is closed. Normal startup uses the standalone Scout database until the [cutover tool](tools/Scout.DatabaseCutover/README.md) saves a persistent Mutt Stack selection. Future launches and taskbar entries honor that choice. The tool supports explicit, guarded cutover; tests and installers never switch storage automatically. See [Mutt Stack storage](docs/doggo-database.md) and [the isolated handoff rehearsal](tools/Scout.HandoffRehearsal/README.md). Scout owns its local adapter and builds without a companion checkout. See the [database contract](docs/doggo-contract.md).
 
 ### Local data
 

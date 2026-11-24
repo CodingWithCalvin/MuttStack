@@ -16,6 +16,6 @@ Completed output metadata and **Send to Scout** retain the source's provider and
 
 Tucker's owned credential reader supports separately encrypted TMDB and TVDB credentials in Doggo. Its owned metadata-search component can use them, but the UI continues to take series identity from selected sources rather than applying a global series selection.
 
-All implementation and tests live in this repository. Other apps communicate through the Doggo database contract; their source code is not referenced. No API keys are bundled.
+All implementation and tests live in this repository. Other apps communicate through the Mutt Stack database contract; their source code is not referenced. No API keys are bundled.
 
 This product uses the TMDB API but is not endorsed or certified by TMDB. See [TMDB application authentication](https://developer.themoviedb.org/docs/authentication-application).
