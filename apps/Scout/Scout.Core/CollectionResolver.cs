@@ -1,0 +1,75 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+namespace Scout.Core;
+public static class CollectionResolver
+{
+    public static string Hash(string text)=>Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+    public static string? FingerprintKey(JsonNode? fp) {
+        if(fp.Text("algorithm")=="full-file-sha256-v1")return Regex.IsMatch(fp.Text("sha256"),"^[0-9a-f]{64}$")?"file:"+fp.Text("sha256"):null;
+        if(fp.Text("algorithm")!="primary-packets-sha256-v1") return null;
+        var video=fp.Text("video");var audio=fp.Text("audio");
+        return Regex.IsMatch(video,"^[0-9a-f]{64}$")&&Regex.IsMatch(audio,"^[0-9a-f]{64}$")?video+audio:null;
+    }
+    public static List<RecordingGroup> Resolve(JsonObject report) {
+        var rows=report.Array("files").Select(n=>n!.AsObject()).ToList();
+        if(rows.Select(r=>Path.GetFullPath(r.Text("path"))).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=rows.Count)
+            throw new InvalidDataException("Duplicate input path.");
+        var groups=new List<RecordingGroup>();
+        foreach(var batch in rows.GroupBy(r=>RecordingAvailability.Missing(r)?"missing:"+Path.GetFullPath(r.Text("path")):FingerprintKey(r["primary_fingerprint"])??Path.GetFullPath(r.Text("path")).ToUpperInvariant())) {
+            var entries=batch.ToList();var claims=new Dictionary<int,Episode>();var votes=new List<string?>();
+            bool invalid=false,blocked=false,missing=entries.All(RecordingAvailability.Missing),staleOverride=false;
+            JsonObject? human=null;
+            foreach(var row in entries) {
+                var candidates=row.Array("candidates");
+                var decision=HumanResolution.For(report,row);
+                bool forced=decision!=null&&HumanResolution.Valid(report,row,decision);
+                staleOverride|=decision!=null&&!forced;if(forced)human=decision;
+                bool combined=MultipartEvidence.Combined(row);
+                bool bad=!forced&&((candidates.Count>1||row["reasoning"].Text("coverage")=="combined")&&!combined||row["reasoning"].Text("coverage")=="partial"&&!MultipartEvidence.Partial(row)||Subtitles.SubtitleResult.IsSubtitle(row)&&!Subtitles.SubtitleResult.Valid(row,identity:report["series_identity"]?.Deserialize<SeriesIdentity>(Data.Options)));
+                invalid|=bad;
+                bool error=row.Bool("source_changed")||row.Text("relocation_error")!=""||row.Bool("move_pending")||!forced&&(!string.IsNullOrEmpty(row.Text("error"))&&!DialogueAvailability.Unavailable(row)||row.Bool("conflict_review_pending")||row.Text("conflict_review_error")!=""||row.Bool("claim_review_pending")||row.Text("claim_review_error")!="");blocked|=error;
+                var chosen=missing||staleOverride?[]:forced?HumanResolution.Episodes(decision!):(bad||combined?candidates:candidates.Take(1)).Select(c=>Data.Episode(c!["episode"]!)).ToList();
+                foreach(var e in chosen)claims[e.Id]=e;
+                votes.Add(chosen.Count>0&&!error?string.Join(",",chosen.Select(e=>e.Id))+(!forced&&MultipartEvidence.Partial(row)?":partial":":complete"):null);
+            }
+            if(staleOverride)claims.Clear();
+            var status=missing?"source_unavailable":staleOverride?"stale_human_override":invalid?"invalid_model_output":blocked?"source_or_model_error":
+                human==null&&entries.All(DialogueAvailability.Unavailable)?"not_processed":
+                entries.Count>1&&votes.Distinct().Count()>1?"unresolved_conflict":
+                votes.Distinct().Count()==1&&votes[0]!=null?(human==null&&entries.All(MultipartEvidence.Partial)?"partial_unverified":"suggested"):"unassigned";
+            groups.Add(new RecordingGroup {Id=Hash(string.Join("\n",entries.Select(r=>r.Text("path")).Order(StringComparer.Ordinal)))[..16],
+                Rows=entries,Claims=claims.Values.ToList(),Status=status,Episodes=status=="suggested"?claims.Values.ToList():[],HumanDecision=human});
+        }
+        DialogueCopies.Merge(groups);
+        CompilationEvidence.Apply(groups);
+        var winners=groups.Where(g=>g.HumanDecision!=null&&g.Status=="suggested").SelectMany(g=>g.Episodes.Select(e=>(e.Id,Group:g))).GroupBy(x=>x.Id)
+            .ToDictionary(g=>g.Key,g=>g.OrderByDescending(x=>HumanResolution.Order(report,x.Group.HumanDecision!)).First().Group);
+        foreach(var group in groups.Where(g=>g.Claims.Any(e=>winners.TryGetValue(e.Id,out var winner)&&winner!=g))) {
+            group.Status="overridden_conflict";group.Episodes=[];
+        }
+        foreach(var claim in groups.Where(g=>g.Status!="overridden_conflict").SelectMany(g=>g.Claims.Select(e=>(e.Id,Group:g))).GroupBy(p=>p.Id)) {
+            var contenders=claim.Select(p=>p.Group).Distinct().ToList();
+            bool verifiedSplit=false;
+            if(contenders.Count==2&&contenders.All(g=>g.Status=="partial_unverified"&&g.Claims.Count==1)) {
+                var episode=contenders[0].Claims.Single();
+                foreach(var link in report.Array("split_assignments").OfType<JsonObject>()) {
+                    var a=contenders[0];var b=contenders[1];
+                    if(!MultipartEvidence.SplitLink(link,a,b,episode)){(a,b)=(b,a);if(!MultipartEvidence.SplitLink(link,a,b,episode))continue;}
+                    var aFirst=link["verification"].Int("first_recording")==0;
+                    a.Part=aFirst?1:2;b.Part=aFirst?2:1;
+                    foreach(var g in contenders){g.Status="suggested_split";g.Episodes=[episode];g.PartCount=2;g.SplitEvidence=link.DeepClone().AsObject();}
+                    verifiedSplit=true;break;
+                }
+            }
+            if(!verifiedSplit&&(contenders.Count>1||contenders.Any(g=>g.Status=="unresolved_conflict")))
+                foreach(var g in contenders){g.Status="unresolved_conflict";g.Episodes=[];}
+
+        }
+        foreach(var g in groups.Where(g=>g.Status=="unresolved_conflict"))
+            g.CompetingRecordings=groups.Where(other=>other!=g&&other.Claims.Any(e=>g.Claims.Any(c=>c.Id==e.Id))).SelectMany(other=>other.Rows).Select(r=>r.Text("path")).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return groups;
+    }
+}
